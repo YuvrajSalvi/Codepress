@@ -29,7 +29,16 @@ jobs:
         run: chmod +x gradlew
 
       - name: Unit tests and debug APK
-        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+        shell: bash
+        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+
+      - name: Show the error
+        if: failure()
+        shell: bash
+        run: |
+          MSG=$(grep -E -A8 "What went wrong|^e: |error:" build.log | head -40 | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Build error::$MSG"
+          grep -E -A8 "What went wrong|^e: |error:" build.log | head -60 || true
 
       - uses: actions/upload-artifact@v4
         with:
