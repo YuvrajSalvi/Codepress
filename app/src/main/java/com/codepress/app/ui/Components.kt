@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.foundation.BorderStroke
 
 import androidx.compose.foundation.horizontalScroll
@@ -62,11 +63,13 @@ fun CopyButton(text: String, label: String = "Copy", modifier: Modifier = Modifi
 }
 
 private val SHELL_LANGS = setOf("bash", "sh", "shell", "zsh", "console", "terminal", "cmd")
+private val PREVIEW_LANGS = setOf("html", "htm", "svg", "php")
 
 /** Code block with a language header, a Copy button (raw code only) and, for shell code, a real Run button. */
 @Composable
-fun CodeBlock(code: String, language: String = "", onRun: ((String) -> Unit)? = null) {
+fun CodeBlock(code: String, language: String = "", onRun: ((String) -> Unit)? = null, onPreview: (() -> Unit)? = null) {
     val isShell = language.lowercase() in SHELL_LANGS
+    val canPreview = onPreview != null && language.lowercase() in PREVIEW_LANGS
     Surface(color = MaterialTheme.colorScheme.background, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -78,6 +81,9 @@ fun CodeBlock(code: String, language: String = "", onRun: ((String) -> Unit)? = 
                 )
                 if (isShell && onRun != null) {
                     IconAction(Icons.Rounded.PlayArrow, "Run in shell", { onRun(code) })
+                }
+                if (canPreview) {
+                    IconAction(Icons.Rounded.PlayCircle, "Run / preview", { onPreview?.invoke() }, tint = MaterialTheme.colorScheme.primary)
                 }
                 CopyButton(code)
             }

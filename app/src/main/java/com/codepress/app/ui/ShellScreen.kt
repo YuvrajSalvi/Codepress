@@ -2,6 +2,7 @@ package com.codepress.app.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
@@ -24,11 +25,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +56,19 @@ import com.codepress.app.agent.ShellEntry
 import com.codepress.app.agent.ShellOrigin
 import com.codepress.app.agent.ShellState
 
+private val QUICK_COMMANDS = listOf(
+    "ls -la", "pwd", "cat ", "mkdir ", "git status", "git add .", "git commit -m \"\"", "git push", "git clone ",
+    "pkg install ", "pip install ", "nano ", "python ", "node ",
+)
+
+private val HELP = listOf(
+    "Files and folders" to "ls  cd  pwd  cat  mkdir  cp  mv  rm",
+    "Git (Phase 2)" to "git status\ngit add .\ngit commit -m \"message\"\ngit push\ngit clone <link>",
+    "Install tools (Phase 2)" to "pkg install <name>\npip install <name>",
+    "Edit a file (Phase 2)" to "nano <file>",
+    "Tip" to "Tap a chip above the box to fill in a command, then edit it and tap Run. Commands from the AI show up here marked “AI →”.",
+)
+
 @Composable
 fun ShellScreen(vm: ChatViewModel) {
     val entries by vm.shell.entries.collectAsStateWithLifecycle()
@@ -60,6 +76,7 @@ fun ShellScreen(vm: ChatViewModel) {
     val history by vm.shell.history.collectAsStateWithLifecycle()
     var input by rememberSaveable { mutableStateOf("") }
     var showHistory by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     fun submit() {
@@ -75,6 +92,7 @@ fun ShellScreen(vm: ChatViewModel) {
                 Text("Shell", style = MaterialTheme.typography.titleMedium)
                 Text(cwd, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            IconAction(Icons.Rounded.Info, "Terminal help", { showHelp = true })
             IconAction(Icons.Rounded.History, "Command history", { showHistory = true })
             IconAction(Icons.Rounded.Delete, "Clear screen", vm::clearShell)
         }
@@ -83,7 +101,7 @@ fun ShellScreen(vm: ChatViewModel) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (entries.isEmpty()) {
                 Text(
-                    "Run any command, for example:\n\nls\npwd\ncd src\n\nCommands the AI runs also show up here, marked “AI →”. The shell stays inside the project workspace.",
+                    "Run any command, for example:\n\nls\npwd\ncd src\n\nTap the chips above the box for common commands. Commands the AI runs also show up here, marked “AI →”. The shell stays inside this project's files.",
                     modifier = Modifier.padding(20.dp),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.5.sp,
@@ -105,6 +123,12 @@ fun ShellScreen(vm: ChatViewModel) {
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        // Quick commands: tap to fill the box, then edit and run.
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            QUICK_COMMANDS.forEach { cmd ->
+                AssistChip(onClick = { input = cmd }, label = { Text(cmd.trim(), fontFamily = FontFamily.Monospace, fontSize = 12.sp) })
+            }
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = input,
@@ -121,6 +145,24 @@ fun ShellScreen(vm: ChatViewModel) {
             Spacer(Modifier.width(8.dp))
             PrimaryIconButton(Icons.Rounded.PlayArrow, "Run command", { submit() }, enabled = input.isNotBlank())
         }
+    }
+
+    if (showHelp) {
+        AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text("Terminal help") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HELP.forEach { (title, body) ->
+                        Column {
+                            Text(title, style = MaterialTheme.typography.titleMedium)
+                            Text(body, fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Close") } },
+        )
     }
 
     if (showHistory) {

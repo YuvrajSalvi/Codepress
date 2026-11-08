@@ -12,6 +12,10 @@ enum class ProviderType(val label: String) {
     LOCAL("On-device model (llama.cpp)"),
 }
 
+data class ConfiguredModel(val provider: ProviderType, val label: String, val model: String) {
+    val title: String get() = "$label · $model"
+}
+
 data class OpenAiPreset(val label: String, val baseUrl: String)
 
 val OPENAI_PRESETS = listOf(
@@ -50,6 +54,36 @@ class SecureSettings(context: Context) {
     var autoApprove: Boolean
         get() = prefs.getBoolean("auto_approve", false)
         set(v) = prefs.edit().putBoolean("auto_approve", v).apply()
+
+    var notificationsOn: Boolean
+        get() = prefs.getBoolean("notify_on", true)
+        set(v) = prefs.edit().putBoolean("notify_on", v).apply()
+
+    /** When true, AI replies and file updates only notify while the app is not on screen. */
+    var notifyOnlyBackground: Boolean
+        get() = prefs.getBoolean("notify_bg_only", true)
+        set(v) = prefs.edit().putBoolean("notify_bg_only", v).apply()
+
+    var githubUser: String
+        get() = prefs.getString("github_user", "") ?: ""
+        set(v) = prefs.edit().putString("github_user", v.trim()).apply()
+
+    var githubToken: String
+        get() = prefs.getString("github_token", "") ?: ""
+        set(v) = prefs.edit().putString("github_token", v.trim()).apply()
+
+    /** Every provider that is ready to use. The model switcher next to the chat box shows exactly these. */
+    fun configuredModels(): List<ConfiguredModel> = buildList {
+        if (apiKey(ProviderType.ANTHROPIC).isNotBlank() && model(ProviderType.ANTHROPIC).isNotBlank())
+            add(ConfiguredModel(ProviderType.ANTHROPIC, "Claude", model(ProviderType.ANTHROPIC)))
+        if (apiKey(ProviderType.GEMINI).isNotBlank() && model(ProviderType.GEMINI).isNotBlank())
+            add(ConfiguredModel(ProviderType.GEMINI, "Gemini", model(ProviderType.GEMINI)))
+        val keyless = openAiBaseUrl.startsWith("http://")
+        if ((apiKey(ProviderType.OPENAI).isNotBlank() || keyless) && model(ProviderType.OPENAI).isNotBlank())
+            add(ConfiguredModel(ProviderType.OPENAI, "OpenAI-compatible", model(ProviderType.OPENAI)))
+        if (localModelName.isNotBlank())
+            add(ConfiguredModel(ProviderType.LOCAL, "On-device", localModelName))
+    }
 
     /** Returns a human readable problem with the current setup, or null when ready to chat. */
     fun configProblem(): String? = when (provider) {

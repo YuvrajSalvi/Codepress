@@ -2,12 +2,12 @@ package com.codepress.app.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -28,6 +28,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -44,12 +45,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.codepress.app.data.OPENAI_PRESETS
@@ -60,9 +60,20 @@ import kotlinx.coroutines.launch
 private const val SUGGESTED_MODEL_URL =
     "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
+    var page by rememberSaveable { mutableStateOf("main") }
+    BackHandler(enabled = page != "main") { page = "main" }
+    when (page) {
+        "keys" -> ApiKeysScreen(vm) { page = "main" }
+        "plugins" -> PluginsScreen(vm) { page = "main" }
+        else -> MainSettings(vm, onBack, openKeys = { page = "keys" }, openPlugins = { page = "plugins" })
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> Unit, openPlugins: () -> Unit) {
     val s = vm.settings
     val rev by vm.revision.collectAsStateWithLifecycle()
     val modelStatus by vm.modelStatus.collectAsStateWithLifecycle()
@@ -71,14 +82,16 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var provider by remember { mutableStateOf(s.provider) }
-    var anthropicKey by remember { mutableStateOf(s.apiKey(ProviderType.ANTHROPIC)) }
+    val anthropicKey = remember(rev) { s.apiKey(ProviderType.ANTHROPIC) }
     var anthropicModel by remember { mutableStateOf(s.model(ProviderType.ANTHROPIC)) }
     var openAiBase by remember { mutableStateOf(s.openAiBaseUrl) }
-    var openAiKey by remember { mutableStateOf(s.apiKey(ProviderType.OPENAI)) }
+    val openAiKey = remember(rev) { s.apiKey(ProviderType.OPENAI) }
     var openAiModel by remember { mutableStateOf(s.model(ProviderType.OPENAI)) }
-    var geminiKey by remember { mutableStateOf(s.apiKey(ProviderType.GEMINI)) }
+    val geminiKey = remember(rev) { s.apiKey(ProviderType.GEMINI) }
     var geminiModel by remember { mutableStateOf(s.model(ProviderType.GEMINI)) }
     var autoApprove by remember { mutableStateOf(s.autoApprove) }
+    var notificationsOn by remember { mutableStateOf(s.notificationsOn) }
+    var notifyOnlyBackground by remember { mutableStateOf(s.notifyOnlyBackground) }
     var downloadUrl by remember { mutableStateOf("") }
 
     var fetched by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -143,6 +156,9 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            NavRow("API keys", "Locked with your fingerprint or phone password", openKeys)
+            NavRow("Plugins", "GitHub", openPlugins)
+            HorizontalDivider()
             Text("AI provider", style = MaterialTheme.typography.titleMedium)
             ProviderType.entries.forEach { p ->
                 Row(
@@ -159,30 +175,37 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     Text(p.label, Modifier.padding(start = 10.dp))
                 }
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = false, onClick = null, enabled = false)
+                Column(Modifier.padding(start = 10.dp)) {
+                    Text("Tilak — our own AI model", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Coming Soon", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+            }
             HorizontalDivider()
 
             when (provider) {
                 ProviderType.ANTHROPIC -> {
                     Text("Anthropic", style = MaterialTheme.typography.titleMedium)
-                    SecretField("API key", anthropicKey) { anthropicKey = it; s.setApiKey(ProviderType.ANTHROPIC, it); vm.bump() }
+                    KeyHint(anthropicKey.isNotBlank(), openKeys)
                     ModelField(anthropicModel, { anthropicModel = it; s.setModel(ProviderType.ANTHROPIC, it); vm.bump() }, fetched, fetching, fetchError, anthropicKey.isNotBlank(), ::fetchModels)
                 }
 
                 ProviderType.GEMINI -> {
                     Text("Google Gemini", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Paste your Gemini API key from Google AI Studio. The models available to your key load by themselves, just tap one.",
+                        "Add your Gemini API key under API keys below. The models available to your key load by themselves, just tap one.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    SecretField("API key", geminiKey) { geminiKey = it; s.setApiKey(ProviderType.GEMINI, it); fetched = emptyList(); fetchError = null; vm.bump() }
+                    KeyHint(geminiKey.isNotBlank(), openKeys)
                     ModelField(geminiModel, { geminiModel = it; s.setModel(ProviderType.GEMINI, it); vm.bump() }, fetched, fetching, fetchError, geminiKey.isNotBlank(), ::fetchModels)
                 }
 
                 ProviderType.OPENAI -> {
                     Text("OpenAI-compatible API", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Works with OpenAI, OpenRouter, Groq, DeepSeek, Gemini, and local servers such as Ollama or LM Studio. Pick a preset, then paste your key.",
+                        "Works with OpenAI, OpenRouter, Groq, DeepSeek, Gemini, and local servers such as Ollama or LM Studio. Pick a preset, then add your key under API keys.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -199,7 +222,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    SecretField("API key (leave empty for local servers)", openAiKey) { openAiKey = it; s.setApiKey(ProviderType.OPENAI, it); vm.bump() }
+                    KeyHint(openAiKey.isNotBlank(), openKeys, optional = true)
                     ModelField(openAiModel, { openAiModel = it; s.setModel(ProviderType.OPENAI, it); vm.bump() }, fetched, fetching, fetchError, openAiBase.isNotBlank(), ::fetchModels)
                 }
 
@@ -267,8 +290,35 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 Switch(checked = autoApprove, onCheckedChange = { autoApprove = it; s.autoApprove = it })
             }
             HorizontalDivider()
+            Text("Notifications", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Show notifications")
+                    Text(
+                        "Model download progress, AI replies, new files and approval requests.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = notificationsOn, onCheckedChange = { notificationsOn = it; s.notificationsOn = it })
+            }
+            if (notificationsOn) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Only when the app is closed")
+                        Text(
+                            "Skip AI and file notifications while you are looking at the app. Download progress always shows.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = notifyOnlyBackground, onCheckedChange = { notifyOnlyBackground = it; s.notifyOnlyBackground = it })
+                }
+            }
+            HorizontalDivider()
+            Text("About", style = MaterialTheme.typography.titleMedium)
             Text(
-                "API keys are stored encrypted on this phone and are only sent to the provider you choose.",
+                "CodePress · $TILAK_LINE",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -277,18 +327,27 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SecretField(label: String, value: String, onChange: (String) -> Unit) {
-    var show by remember { mutableStateOf(false) }
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon = { IconAction(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, if (show) "Hide key" else "Show key", { show = !show }) },
-        modifier = Modifier.fillMaxWidth(),
-    )
+private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun KeyHint(hasKey: Boolean, openKeys: () -> Unit, optional: Boolean = false) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (hasKey) "● API key saved" else if (optional) "● No API key (fine for local servers)" else "● No API key yet",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (hasKey) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(onClick = openKeys) { Text(if (hasKey) "Change" else "Add key") }
+    }
 }
 
 @Composable

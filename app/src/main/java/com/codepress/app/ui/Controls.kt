@@ -1,6 +1,18 @@
 package com.codepress.app.ui
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -13,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -69,4 +82,20 @@ fun StatusIcon(status: ToolStatus, tint: Color, size: Dp = 15.dp) {
         ToolStatus.AWAITING -> Icon(Icons.Rounded.Info, contentDescription = "Needs approval", tint = tint, modifier = Modifier.size(size))
         ToolStatus.QUEUED -> Icon(Icons.Rounded.MoreHoriz, contentDescription = "Queued", tint = tint, modifier = Modifier.size(size))
     }
+}
+
+/** Password style text field with a show / hide eye. Used for API keys and tokens. */
+@Composable
+fun SecretField(label: String, value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+    var show by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        trailingIcon = { IconAction(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, if (show) "Hide" else "Show", { show = !show }) },
+        modifier = modifier.fillMaxWidth(),
+    )
 }

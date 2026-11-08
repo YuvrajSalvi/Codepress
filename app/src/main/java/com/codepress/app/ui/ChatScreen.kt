@@ -2,7 +2,10 @@ package com.codepress.app.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -31,6 +34,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -62,10 +66,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.codepress.app.agent.ShellOrigin
 import com.codepress.app.agent.ShellState
 import com.codepress.app.agent.str
+import com.codepress.app.data.Project
+import com.codepress.app.data.humanSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Unit) {
+fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOpenShell: () -> Unit, onOpenFiles: () -> Unit) {
     val uiItems by vm.items.collectAsStateWithLifecycle()
     val running by vm.running.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
@@ -73,7 +79,8 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
     val problem = remember(rev) { vm.settings.configProblem() }
     val subtitle = remember(rev) { vm.activeLabel() }
     var input by rememberSaveable { mutableStateOf("") }
-    var menu by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    val download = rememberFileDownloader(vm)
     val listState = rememberLazyListState()
     val view = LocalView.current
     val attention = !running && uiItems.lastOrNull().let { it is UiItem.Notice && it.isError }
@@ -87,9 +94,10 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                navigationIcon = { IconAction(Icons.AutoMirrored.Rounded.ArrowBack, "All projects", { vm.closeProject() }) },
                 title = {
                     Column {
-                        Text("CodePress", style = MaterialTheme.typography.titleMedium)
+                        Text(project.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val (dot, word) = when {
                             running -> "●" to "Working"
                             attention -> "●" to "Attention"
@@ -105,7 +113,7 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
                     }
                 },
                 actions = {
-                    IconAction(Icons.Rounded.Add, "New chat", { vm.newChat() })
+                    IconAction(Icons.Rounded.DeleteSweep, "Clear chat", { confirmClear = true }, enabled = uiItems.isNotEmpty() && !running)
                     IconAction(Icons.Rounded.Settings, "Settings", onSettings)
                 },
             )
@@ -140,9 +148,14 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
                         items(uiItems.asReversed(), key = { it.id }) { item ->
                             when (item) {
                                 is UiItem.User -> UserBubble(item.text)
-                                is UiItem.Assistant -> AssistantText(item.text) { cmd -> vm.runInShell(cmd); onOpenShell() }
+                                is UiItem.Assistant -> AssistantText(
+                                    item.text,
+                                    onRun = { cmd -> vm.runInShell(cmd); onOpenShell() },
+                                    onPreview = { code, lang -> vm.previewCode(code, lang) },
+                                )
                                 is UiItem.Tool -> ToolCard(item, vm, onOpenShell)
                                 is UiItem.Notice -> NoticeText(item)
+                                is UiItem.Files -> FilesCard(item, vm, download, onOpenFiles)
                             }
                         }
                     }
@@ -151,8 +164,14 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
 
             status?.let { LiveStatus(it) }
 
+            ModelSwitcher(
+                vm,
+                enabled = !running,
+                onManage = onSettings,
+                modifier = Modifier.padding(start = 12.dp, top = 6.dp),
+            )
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
                 OutlinedTextField(
@@ -180,6 +199,16 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
             }
         }
     }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear this chat?") },
+            text = { Text("The conversation of “${project.name}” is deleted. Its files stay.") },
+            confirmButton = { TextButton(onClick = { confirmClear = false; vm.clearChat() }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
@@ -192,6 +221,8 @@ private fun EmptyState(modifier: Modifier) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(Modifier.height(20.dp))
+        Text(TILAK_LINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -212,17 +243,57 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AssistantText(text: String, onRun: (String) -> Unit) {
+private fun AssistantText(text: String, onRun: (String) -> Unit, onPreview: (String, String) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         text.split("```").forEachIndexed { i, part ->
             if (i % 2 == 1) {
                 val hasLang = part.contains('\n')
-                val lang = if (hasLang) part.substringBefore('\n').trim() else ""
+                val lang = if (hasLang) part.substringBefore('\n').trim().substringBefore(' ') else ""
                 val body = (if (hasLang) part.substringAfter('\n') else part).trimEnd('\n')
-                CodeBlock(body, lang, onRun)
+                CodeBlock(body, lang, onRun, onPreview = { onPreview(body, lang) })
             } else if (part.isNotBlank()) {
-                SelectionContainer { Text(part.trim(), style = MaterialTheme.typography.bodyLarge) }
+                MarkdownText(part.trim())
             }
+        }
+    }
+}
+
+/** Files the AI created or changed: each one can be downloaded (and html can be run) right from the chat. */
+@Composable
+private fun FilesCard(item: UiItem.Files, vm: ChatViewModel, download: (String) -> Unit, onOpenFiles: () -> Unit) {
+    val all = item.created.map { it to true } + item.updated.map { it to false }
+    val shown = all.take(8)
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp, end = 4.dp)) {
+            val summary = buildList {
+                if (item.created.isNotEmpty()) add("${item.created.size} file${if (item.created.size == 1) "" else "s"} created")
+                if (item.updated.isNotEmpty()) add("${item.updated.size} updated")
+            }.joinToString(" · ")
+            Text(summary, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            shown.forEach { (path, isNew) ->
+                val size = remember(item.id, path) { runCatching { humanSize(vm.workspace.resolve(path).length()) }.getOrDefault("") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                        Text(path.substringAfterLast('/'), fontFamily = FontFamily.Monospace, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val dir = path.substringBeforeLast('/', "")
+                        Text(
+                            (if (dir.isNotEmpty()) "$dir · " else "") + size + if (isNew) "" else " · updated",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (isPreviewable(path)) IconAction(Icons.Rounded.PlayCircle, "Run / preview", { vm.previewFile(path) }, tint = MaterialTheme.colorScheme.primary)
+                    IconAction(Icons.Rounded.Download, "Download", { download(path) })
+                }
+            }
+            TextButton(onClick = onOpenFiles) { Text(if (all.size > shown.size) "+${all.size - shown.size} more in Files" else "Open in Files", fontSize = 12.sp) }
         }
     }
 }
