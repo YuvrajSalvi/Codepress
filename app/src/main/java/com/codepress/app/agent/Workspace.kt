@@ -22,6 +22,11 @@ class Workspace(root: File) {
         return file
     }
 
+    fun contains(file: File): Boolean {
+        val f = file.canonicalFile
+        return f.path == root.path || f.path.startsWith(root.path + File.separator)
+    }
+
     fun relative(file: File): String =
         file.relativeTo(root).path.ifEmpty { "." }
 

@@ -30,7 +30,10 @@ private fun objectSchema(
     putJsonArray("required") { required.forEach { add(it) } }
 }
 
-class ToolExecutor(private val workspace: Workspace) {
+class ToolExecutor(
+    private val workspace: Workspace,
+    val shell: ShellRunner = ShellRunner(workspace),
+) {
 
     val specs: List<ToolSpec> = listOf(
         ToolSpec(
@@ -121,7 +124,7 @@ class ToolExecutor(private val workspace: Workspace) {
             "write_file" -> writeFile(need(a, "path"), a.str("content") ?: error("Missing argument: content"))
             "edit_file" -> editFile(need(a, "path"), need(a, "old_text"), a.str("new_text") ?: error("Missing argument: new_text"))
             "search_files" -> searchFiles(need(a, "pattern"), a.str("path") ?: ".")
-            "run_command" -> runCommand(need(a, "command"), a.int("timeout_seconds") ?: 60)
+            "run_command" -> runCommand(need(a, "command"), a.int("timeout_seconds") ?: 60, call.id)
             else -> error("Unknown tool: ${call.name}")
         }
     }
@@ -215,49 +218,14 @@ class ToolExecutor(private val workspace: Workspace) {
         return out.toString().trimEnd()
     }
 
-    private suspend fun runCommand(command: String, timeoutSeconds: Int): String {
-        val timeout = timeoutSeconds.coerceIn(1, 300)
-        val shell = if (File("/system/bin/sh").exists()) "/system/bin/sh" else "sh"
-        val pb = ProcessBuilder(shell, "-c", command)
-            .directory(workspace.root)
-            .redirectErrorStream(true)
-        pb.environment()["HOME"] = workspace.root.path
-        val process = pb.start()
-        process.outputStream.close()
-        val output = StringBuilder()
-        val reader = Thread {
-            try {
-                process.inputStream.bufferedReader().use { r ->
-                    val buf = CharArray(4096)
-                    while (true) {
-                        val n = r.read(buf)
-                        if (n < 0) break
-                        synchronized(output) { if (output.length < MAX_OUTPUT_CHARS * 2) output.append(buf, 0, n) }
-                    }
-                }
-            } catch (_: Exception) {
-            }
+    private suspend fun runCommand(command: String, timeoutSeconds: Int, tag: String): String {
+        val e = shell.run(command, ShellOrigin.AI, timeoutSeconds.coerceIn(1, 300), tag)
+        val text = e.output
+        return when {
+            e.exitCode == null -> text.ifEmpty { "[no output]" }
+            text.isEmpty() -> "[exit code ${e.exitCode}]"
+            else -> "$text\n[exit code ${e.exitCode}]"
         }
-        reader.isDaemon = true
-        reader.start()
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeout.toLong())
-        var timedOut = false
-        try {
-            while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
-                currentCoroutineContext().ensureActive()
-                if (System.nanoTime() > deadline) {
-                    timedOut = true
-                    break
-                }
-            }
-        } finally {
-            if (process.isAlive) process.destroyForcibly()
-        }
-        reader.join(1000)
-        val text = synchronized(output) { output.toString() }.trimEnd()
-        if (timedOut) return "$text\n[killed: timed out after ${timeout}s]".trim()
-        val code = process.exitValue()
-        return if (text.isEmpty()) "[exit code $code]" else "$text\n[exit code $code]"
     }
 
     private fun looksBinary(file: File): Boolean =

@@ -1,23 +1,19 @@
 package com.codepress.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -46,21 +42,22 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.codepress.app.agent.ToolCall
+import com.codepress.app.agent.ShellOrigin
+import com.codepress.app.agent.ShellState
 import com.codepress.app.agent.str
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onFiles: () -> Unit) {
+fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Unit) {
     val uiItems by vm.items.collectAsStateWithLifecycle()
     val running by vm.running.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsStateWithLifecycle()
     val rev by vm.revision.collectAsStateWithLifecycle()
     val problem = remember(rev) { vm.settings.configProblem() }
     val subtitle = remember(rev) { vm.activeLabel() }
@@ -68,6 +65,7 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onFiles: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val view = LocalView.current
+    val attention = !running && uiItems.lastOrNull().let { it is UiItem.Notice && it.isError }
 
     // Keep the screen on while the agent works, so Android does not freeze the app mid-task.
     LaunchedEffect(running) { view.keepScreenOn = running }
@@ -81,10 +79,15 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onFiles: () -> Unit) {
                 title = {
                     Column {
                         Text("CodePress", style = MaterialTheme.typography.titleMedium)
+                        val (dot, word) = when {
+                            running -> "●" to "Working"
+                            attention -> "●" to "Attention"
+                            else -> "●" to "Ready"
+                        }
                         Text(
-                            subtitle,
+                            "$dot $word · $subtitle",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -94,7 +97,6 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onFiles: () -> Unit) {
                     TextButton(onClick = { menu = true }) { Text("Menu") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("New chat") }, onClick = { menu = false; vm.newChat() })
-                        DropdownMenuItem(text = { Text("Files") }, onClick = { menu = false; onFiles() })
                         DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onSettings() })
                     }
                 },
@@ -124,14 +126,14 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onFiles: () -> Unit) {
                         state = listState,
                         reverseLayout = true,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                        contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(uiItems.asReversed(), key = { it.id }) { item ->
                             when (item) {
                                 is UiItem.User -> UserBubble(item.text)
-                                is UiItem.Assistant -> AssistantText(item.text)
-                                is UiItem.Tool -> ToolCard(item, vm::answerApproval)
+                                is UiItem.Assistant -> AssistantText(item.text) { cmd -> vm.runInShell(cmd); onOpenShell() }
+                                is UiItem.Tool -> ToolCard(item, vm, onOpenShell)
                                 is UiItem.Notice -> NoticeText(item)
                             }
                         }
@@ -139,11 +141,10 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onFiles: () -> Unit) {
                 }
             }
 
+            status?.let { LiveStatus(it) }
+
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
                 OutlinedTextField(
@@ -177,7 +178,7 @@ private fun EmptyState(modifier: Modifier) {
         Text("CodePress", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            "An AI coding agent in your pocket. It can read, write and edit files in its workspace and run shell commands. Try:\n\n“Create a small HTML page with a counter button.”",
+            "An AI coding agent in your pocket. It reads, writes and edits files in its workspace and runs shell commands. You see everything it does. Try:\n\n“Create a small HTML page with a counter button.”",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -200,90 +201,127 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AssistantText(text: String) {
-    SelectionContainer {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            text.split("```").forEachIndexed { i, part ->
-                if (i % 2 == 1) {
-                    CodeBlock(part.substringAfter('\n', part).trimEnd())
-                } else if (part.isNotBlank()) {
-                    Text(part.trim(), style = MaterialTheme.typography.bodyLarge)
-                }
+private fun AssistantText(text: String, onRun: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        text.split("```").forEachIndexed { i, part ->
+            if (i % 2 == 1) {
+                val hasLang = part.contains('\n')
+                val lang = if (hasLang) part.substringBefore('\n').trim() else ""
+                val body = (if (hasLang) part.substringAfter('\n') else part).trimEnd('\n')
+                CodeBlock(body, lang, onRun)
+            } else if (part.isNotBlank()) {
+                SelectionContainer { Text(part.trim(), style = MaterialTheme.typography.bodyLarge) }
             }
         }
     }
 }
 
 @Composable
-private fun CodeBlock(code: String) {
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Text(
-            code,
-            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(10.dp),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.5.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-@Composable
 private fun NoticeText(item: UiItem.Notice) {
-    Text(
-        item.text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = if (item.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-private fun summary(c: ToolCall): String = when (c.name) {
-    "run_command" -> "$ " + (c.arguments.str("command") ?: "")
-    "search_files" -> "search_files  " + (c.arguments.str("pattern") ?: "")
-    else -> c.name + "  " + (c.arguments.str("path") ?: "")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            (if (item.isError) "✕ " else "") + item.text,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (item.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (item.isError) CopyButton(item.text)
+    }
 }
 
 @Composable
-private fun ToolCard(item: UiItem.Tool, onApproval: (Boolean) -> Unit) {
+private fun ToolCard(item: UiItem.Tool, vm: ChatViewModel, onOpenShell: () -> Unit) {
+    val call = item.call
+    val isCommand = call.name == "run_command"
     var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
-    val (glyph, color) = when (item.status) {
-        ToolStatus.QUEUED -> "…" to MaterialTheme.colorScheme.onSurfaceVariant
-        ToolStatus.AWAITING -> "?" to MaterialTheme.colorScheme.primary
-        ToolStatus.RUNNING -> "▶" to MaterialTheme.colorScheme.primary
-        ToolStatus.DONE -> "✓" to MaterialTheme.colorScheme.secondary
-        ToolStatus.FAILED -> "✗" to MaterialTheme.colorScheme.error
-        ToolStatus.DENIED -> "⊘" to MaterialTheme.colorScheme.error
+    val entries = if (isCommand) vm.shell.entries.collectAsStateWithLifecycle().value else emptyList()
+    val entry = if (isCommand) entries.lastOrNull { it.origin == ShellOrigin.AI && it.tag == call.id && it.id > item.shellFrom } else null
+
+    val active = item.status == ToolStatus.QUEUED || item.status == ToolStatus.AWAITING || item.status == ToolStatus.RUNNING
+    val (glyph, word, color) = when (item.status) {
+        ToolStatus.QUEUED -> Triple("…", "Queued", MaterialTheme.colorScheme.onSurfaceVariant)
+        ToolStatus.AWAITING -> Triple("?", "Needs approval", MaterialTheme.colorScheme.primary)
+        ToolStatus.RUNNING -> Triple("●", "Running", MaterialTheme.colorScheme.primary)
+        ToolStatus.DONE -> Triple("✓", "Done", MaterialTheme.colorScheme.secondary)
+        ToolStatus.FAILED -> Triple("✕", "Failed", MaterialTheme.colorScheme.error)
+        ToolStatus.DENIED -> Triple("■", "Denied", MaterialTheme.colorScheme.error)
     }
+    val target = toolTarget(call)
+
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(glyph, color = color, modifier = Modifier.width(22.dp))
-                Text(
-                    summary(item.call),
-                    modifier = Modifier.weight(1f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    maxLines = if (item.status == ToolStatus.AWAITING) 12 else 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$glyph $word", color = color, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                val ms = entry?.durationMs ?: item.durationMs
+                if (ms > 0 && !active) Text(formatDuration(ms), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (item.status == ToolStatus.AWAITING) {
-                Spacer(Modifier.height(6.dp))
-                when (item.call.name) {
-                    "write_file" -> CodeBlock((item.call.arguments.str("content") ?: "").take(1500))
-                    "edit_file" -> {
-                        CodeBlock("- " + (item.call.arguments.str("old_text") ?: "").take(700))
-                        CodeBlock("+ " + (item.call.arguments.str("new_text") ?: "").take(700))
+            Text(if (active) runningLabel(call) else doneLabel(call), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+
+            if (isCommand) {
+                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "$ $target",
+                            modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.5.sp,
+                            maxLines = if (item.status == ToolStatus.AWAITING) 12 else 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        CopyButton(target)
                     }
                 }
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onApproval(true) }) { Text("Allow") }
-                    OutlinedButton(onClick = { onApproval(false) }) { Text("Deny") }
+            } else if (target.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(target, modifier = Modifier.weight(1f), fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (call.name != "search_files") CopyButton(target, "Copy path")
                 }
             }
-            val out = item.output
-            if (!out.isNullOrEmpty()) {
-                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide output" else "Show output") }
-                if (expanded) CodeBlock(out.take(4000))
+
+            if (item.status == ToolStatus.AWAITING) {
+                when (call.name) {
+                    "write_file" -> CodeBlock((call.arguments.str("content") ?: "").take(1500), "new content")
+                    "edit_file" -> {
+                        CodeBlock((call.arguments.str("old_text") ?: "").take(700), "remove")
+                        CodeBlock((call.arguments.str("new_text") ?: "").take(700), "add")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { vm.answerApproval(true) }) { Text("Allow") }
+                    OutlinedButton(onClick = { vm.answerApproval(false) }) { Text("Deny") }
+                }
+            }
+
+            val out = entry?.output ?: item.output.orEmpty()
+            if (out.isNotEmpty()) {
+                val long = out.length > 400 || out.lines().size > 6
+                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SelectionContainer {
+                        Text(
+                            if (expanded || !long) out.take(20_000) else lastLines(out, 6),
+                            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(10.dp),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (long) TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Collapse" else "View full output", fontSize = 12.sp) }
+                    Spacer(Modifier.weight(1f))
+                    CopyButton(out, "Copy output")
+                }
+            }
+
+            if (entry != null && entry.exitCode != null) {
+                Text("Exit code ${entry.exitCode} · ${formatDuration(entry.durationMs)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (entry != null && entry.state == ShellState.RUNNING) {
+                OutlinedButton(onClick = { vm.stopShell(entry.id) }) { Text("Stop command") }
+            } else if (isCommand && entry != null && !active) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { vm.runInShell(target); onOpenShell() }) { Text("Run again") }
+                    TextButton(onClick = onOpenShell) { Text("Open Shell") }
+                }
             }
         }
     }

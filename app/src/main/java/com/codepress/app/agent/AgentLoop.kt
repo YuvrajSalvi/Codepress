@@ -25,6 +25,7 @@ class AgentLoop(
     private val tools: ToolExecutor,
     private val autoApprove: Boolean,
     private val maxSteps: Int = 30,
+    private val systemPrompt: () -> String = { SystemPrompt.base },
 ) {
     /**
      * Runs the conversation until the model stops asking for tools.
@@ -39,7 +40,7 @@ class AgentLoop(
                 return
             }
 
-            val turn = provider.complete(history, SystemPrompt.base, tools.specs) { listener.onAssistantText(it) }
+            val turn = provider.complete(history, systemPrompt(), tools.specs) { listener.onAssistantText(it) }
             history += ChatMessage.Assistant(turn.text, turn.toolCalls)
             listener.onAssistantDone(turn.text, turn.toolCalls)
 

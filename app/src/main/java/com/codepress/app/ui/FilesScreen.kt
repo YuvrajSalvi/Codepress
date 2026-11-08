@@ -85,13 +85,12 @@ fun FilesScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .horizontalScroll(rememberScrollState())
-                    .navigationBarsPadding()
                     .padding(12.dp),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.5.sp,
             )
         } else {
-            Column(Modifier.padding(inner).fillMaxSize().navigationBarsPadding()) {
+            Column(Modifier.padding(inner).fillMaxSize()) {
                 FlowRow(
                     Modifier.padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -8,6 +8,9 @@ import com.arm.aichat.AiChat
 import com.codepress.app.agent.AgentListener
 import com.codepress.app.agent.AgentLoop
 import com.codepress.app.agent.ChatMessage
+import com.codepress.app.agent.ShellOrigin
+import com.codepress.app.agent.ShellRunner
+import com.codepress.app.agent.SystemPrompt
 import com.codepress.app.agent.ToolCall
 import com.codepress.app.agent.ToolExecutor
 import com.codepress.app.agent.ToolResult
@@ -37,16 +40,29 @@ sealed interface UiItem {
 
     data class User(override val id: Long, val text: String) : UiItem
     data class Assistant(override val id: Long, val text: String, val streaming: Boolean) : UiItem
-    data class Tool(override val id: Long, val call: ToolCall, val status: ToolStatus, val output: String?) : UiItem
+    data class Tool(
+        override val id: Long,
+        val call: ToolCall,
+        val status: ToolStatus,
+        val output: String?,
+        val startedAt: Long = 0,
+        val durationMs: Long = 0,
+        val shellFrom: Long = 0,
+    ) : UiItem
     data class Notice(override val id: Long, val text: String, val isError: Boolean) : UiItem
 }
+
+enum class StatusKind { THINKING, WRITING, WORKING, WAITING }
+
+data class AgentStatus(val kind: StatusKind, val label: String, val since: Long)
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings = SecureSettings(app)
     val workspace = Workspace(File(app.filesDir, "workspace"))
     val models = LocalModels(app)
-    private val tools = ToolExecutor(workspace)
+    val shell = ShellRunner(workspace)
+    private val tools = ToolExecutor(workspace, shell)
     private val transfer = WorkspaceTransfer(app, workspace)
 
     private val localProvider = LocalProvider(
@@ -56,6 +72,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _items = MutableStateFlow<List<UiItem>>(emptyList())
     val items: StateFlow<List<UiItem>> = _items
+
+    private val _status = MutableStateFlow<AgentStatus?>(null)
+    val status: StateFlow<AgentStatus?> = _status
 
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running
@@ -107,9 +126,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         add(UiItem.User(newId(), message))
         history += ChatMessage.User(message)
         _running.value = true
+        setStatus(StatusKind.THINKING, "Thinking")
         job = viewModelScope.launch {
             try {
-                AgentLoop(buildProvider(), tools, settings.autoApprove).run(history, listener)
+                AgentLoop(buildProvider(), tools, settings.autoApprove, systemPrompt = { SystemPrompt.build(workspace) }).run(history, listener)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -155,6 +175,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun finishRun() {
+        _status.value = null
         streamingId = null
         pending = null
         _items.update { list ->
@@ -177,6 +198,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if (sid == null) {
                 val id = newId()
                 streamingId = id
+                setStatus(StatusKind.WRITING, "Writing response")
                 add(UiItem.Assistant(id, text, true))
             } else {
                 replace(sid) { (it as UiItem.Assistant).copy(text = text) }
@@ -201,6 +223,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         override suspend fun requestApproval(call: ToolCall): Boolean {
             val d = CompletableDeferred<Boolean>()
             pending = d
+            setStatus(StatusKind.WAITING, "Waiting for your approval")
             setTool(call, ToolStatus.AWAITING, null)
             try {
                 return d.await()
@@ -209,7 +232,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        override fun onToolRunning(call: ToolCall) = setTool(call, ToolStatus.RUNNING, null)
+        override fun onToolRunning(call: ToolCall) {
+            setStatus(StatusKind.WORKING, runningLabel(call))
+            setTool(call, ToolStatus.RUNNING, null)
+        }
 
         override fun onToolResult(call: ToolCall, result: ToolResult, denied: Boolean) {
             val status = when {
@@ -218,6 +244,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 else -> ToolStatus.DONE
             }
             setTool(call, status, result.output)
+            setStatus(StatusKind.THINKING, "Thinking")
         }
 
         override fun onNotice(message: String) {
@@ -227,8 +254,43 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun setTool(call: ToolCall, status: ToolStatus, output: String?) {
         val id = callToItem[call.id] ?: return
-        replace(id) { (it as UiItem.Tool).copy(status = status, output = output ?: it.output) }
+        val now = System.currentTimeMillis()
+        replace(id) {
+            val t = it as UiItem.Tool
+            when (status) {
+                ToolStatus.RUNNING -> t.copy(status = status, startedAt = now, shellFrom = shell.lastId())
+                ToolStatus.DONE, ToolStatus.FAILED, ToolStatus.DENIED ->
+                    t.copy(status = status, output = output ?: t.output, durationMs = if (t.startedAt > 0) now - t.startedAt else 0)
+                else -> t.copy(status = status, output = output ?: t.output)
+            }
+        }
     }
+
+    private fun setStatus(kind: StatusKind, label: String) {
+        _status.value = AgentStatus(kind, label, System.currentTimeMillis())
+    }
+
+    // -------------------------------------------------------------- shell
+
+    /** Runs a command typed by the user (or sent from a code block's Run button) in the shared shell. */
+    fun runInShell(command: String) {
+        val cmd = command.trim()
+        if (cmd.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                shell.run(cmd, ShellOrigin.USER, timeoutSec = 3600)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                add(UiItem.Notice(newId(), "Shell error: ${friendlyError(e)}", true))
+            }
+            bump() // commands may have changed files
+        }
+    }
+
+    fun stopShell(id: Long) = shell.stop(id)
+
+    fun clearShell() = shell.clear()
 
     @Synchronized
     private fun newId(): Long = nextId++
