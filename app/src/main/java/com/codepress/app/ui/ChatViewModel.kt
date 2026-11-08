@@ -20,6 +20,7 @@ import com.codepress.app.data.ProviderType
 import com.codepress.app.data.SecureSettings
 import com.codepress.app.data.WorkspaceTransfer
 import com.codepress.app.llm.AnthropicProvider
+import com.codepress.app.llm.GeminiProvider
 import com.codepress.app.llm.LlmProvider
 import com.codepress.app.llm.LocalProvider
 import com.codepress.app.llm.OpenAiProvider
@@ -109,6 +110,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun activeLabel(): String = when (settings.provider) {
         ProviderType.ANTHROPIC -> "Anthropic · ${settings.model(ProviderType.ANTHROPIC)}"
+        ProviderType.GEMINI -> "Gemini · ${settings.model(ProviderType.GEMINI).ifBlank { "no model" }}"
         ProviderType.OPENAI -> "OpenAI-compatible · ${settings.model(ProviderType.OPENAI).ifBlank { "no model" }}"
         ProviderType.LOCAL -> "On-device · ${settings.localModelName.ifBlank { "no model" }}"
     }
@@ -165,6 +167,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ProviderType.ANTHROPIC -> AnthropicProvider(
             apiKey = settings.apiKey(ProviderType.ANTHROPIC),
             model = settings.model(ProviderType.ANTHROPIC),
+        )
+        ProviderType.GEMINI -> GeminiProvider(
+            apiKey = settings.apiKey(ProviderType.GEMINI),
+            model = settings.model(ProviderType.GEMINI),
         )
         ProviderType.OPENAI -> OpenAiProvider(
             baseUrl = settings.openAiBaseUrl,

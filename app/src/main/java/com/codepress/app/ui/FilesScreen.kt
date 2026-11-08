@@ -1,5 +1,8 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -63,7 +66,7 @@ fun FilesScreen(vm: ChatViewModel, onBack: () -> Unit) {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = { Text(current ?: "Workspace files") },
-                navigationIcon = { TextButton(onClick = { if (current != null) open = null else onBack() }) { Text("Back") } },
+                navigationIcon = { IconAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", { if (current != null) open = null else onBack() }) },
             )
         },
     ) { inner ->

@@ -1,5 +1,11 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.foundation.BorderStroke
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,14 +49,16 @@ fun CopyButton(text: String, label: String = "Copy", modifier: Modifier = Modifi
             copied = false
         }
     }
-    TextButton(
+    IconAction(
+        icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+        desc = if (copied) "Copied" else label,
         onClick = {
             clipboard.setText(AnnotatedString(text))
             copied = true
         },
         modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-    ) { Text(if (copied) "Copied" else label, fontSize = 12.sp) }
+        tint = if (copied) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 private val SHELL_LANGS = setOf("bash", "sh", "shell", "zsh", "console", "terminal", "cmd")
@@ -59,7 +67,7 @@ private val SHELL_LANGS = setOf("bash", "sh", "shell", "zsh", "console", "termin
 @Composable
 fun CodeBlock(code: String, language: String = "", onRun: ((String) -> Unit)? = null) {
     val isShell = language.lowercase() in SHELL_LANGS
-    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.background, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -69,7 +77,7 @@ fun CodeBlock(code: String, language: String = "", onRun: ((String) -> Unit)? = 
                     modifier = Modifier.weight(1f),
                 )
                 if (isShell && onRun != null) {
-                    TextButton(onClick = { onRun(code) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text("Run", fontSize = 12.sp) }
+                    IconAction(Icons.Rounded.PlayArrow, "Run in shell", { onRun(code) })
                 }
                 CopyButton(code)
             }

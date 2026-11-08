@@ -1,5 +1,16 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.foundation.BorderStroke
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,11 +105,8 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
                     }
                 },
                 actions = {
-                    TextButton(onClick = { menu = true }) { Text("Menu") }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("New chat") }, onClick = { menu = false; vm.newChat() })
-                        DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onSettings() })
-                    }
+                    IconAction(Icons.Rounded.Add, "New chat", { vm.newChat() })
+                    IconAction(Icons.Rounded.Settings, "Settings", onSettings)
                 },
             )
         },
@@ -157,15 +165,17 @@ fun ChatScreen(vm: ChatViewModel, onSettings: () -> Unit, onOpenShell: () -> Uni
                 )
                 Spacer(Modifier.width(8.dp))
                 if (running) {
-                    Button(onClick = vm::stop) { Text("Stop") }
+                    PrimaryIconButton(Icons.Rounded.Stop, "Stop", vm::stop)
                 } else {
-                    Button(
-                        onClick = {
+                    PrimaryIconButton(
+                        Icons.AutoMirrored.Rounded.Send,
+                        "Send",
+                        {
                             vm.send(input)
                             input = ""
                         },
                         enabled = input.isNotBlank(),
-                    ) { Text("Send") }
+                    )
                 }
             }
         }
@@ -189,12 +199,13 @@ private fun EmptyState(modifier: Modifier) {
 private fun UserBubble(text: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Surface(
-            color = MaterialTheme.colorScheme.primary,
-            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.widthIn(max = 320.dp),
         ) {
             SelectionContainer {
-                Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onPrimary)
+                Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -248,17 +259,26 @@ private fun ToolCard(item: UiItem.Tool, vm: ChatViewModel, onOpenShell: () -> Un
     }
     val target = toolTarget(call)
 
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$glyph $word", color = color, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    StatusIcon(item.status, color)
+                    Spacer(Modifier.width(6.dp))
+                    Text(word, color = color, fontSize = 12.sp)
+                }
                 val ms = entry?.durationMs ?: item.durationMs
                 if (ms > 0 && !active) Text(formatDuration(ms), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(if (active) runningLabel(call) else doneLabel(call), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
 
             if (isCommand) {
-                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = MaterialTheme.colorScheme.background, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "$ $target",
@@ -295,7 +315,7 @@ private fun ToolCard(item: UiItem.Tool, vm: ChatViewModel, onOpenShell: () -> Un
             val out = entry?.output ?: item.output.orEmpty()
             if (out.isNotEmpty()) {
                 val long = out.length > 400 || out.lines().size > 6
-                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = MaterialTheme.colorScheme.background, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
                     SelectionContainer {
                         Text(
                             if (expanded || !long) out.take(20_000) else lastLines(out, 6),
@@ -306,7 +326,7 @@ private fun ToolCard(item: UiItem.Tool, vm: ChatViewModel, onOpenShell: () -> Un
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (long) TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Collapse" else "View full output", fontSize = 12.sp) }
+                    if (long) IconAction(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "Collapse output" else "View full output", { expanded = !expanded })
                     Spacer(Modifier.weight(1f))
                     CopyButton(out, "Copy output")
                 }
@@ -316,11 +336,11 @@ private fun ToolCard(item: UiItem.Tool, vm: ChatViewModel, onOpenShell: () -> Un
                 Text("Exit code ${entry.exitCode} · ${formatDuration(entry.durationMs)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (entry != null && entry.state == ShellState.RUNNING) {
-                OutlinedButton(onClick = { vm.stopShell(entry.id) }) { Text("Stop command") }
+                IconAction(Icons.Rounded.Stop, "Stop command", { vm.stopShell(entry.id) }, tint = MaterialTheme.colorScheme.error)
             } else if (isCommand && entry != null && !active) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.runInShell(target); onOpenShell() }) { Text("Run again") }
-                    TextButton(onClick = onOpenShell) { Text("Open Shell") }
+                    IconAction(Icons.Rounded.Refresh, "Run again", { vm.runInShell(target); onOpenShell() })
+                    IconAction(Icons.Rounded.Terminal, "Open Shell", onOpenShell)
                 }
             }
         }

@@ -1,5 +1,12 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Refresh
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -68,8 +75,8 @@ fun ShellScreen(vm: ChatViewModel) {
                 Text("Shell", style = MaterialTheme.typography.titleMedium)
                 Text(cwd, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TextButton(onClick = { showHistory = true }) { Text("History") }
-            TextButton(onClick = vm::clearShell) { Text("Clear") }
+            IconAction(Icons.Rounded.History, "Command history", { showHistory = true })
+            IconAction(Icons.Rounded.Delete, "Clear screen", vm::clearShell)
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
@@ -112,7 +119,7 @@ fun ShellScreen(vm: ChatViewModel) {
                 keyboardActions = KeyboardActions(onGo = { submit() }),
             )
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { submit() }, enabled = input.isNotBlank()) { Text("Run") }
+            PrimaryIconButton(Icons.Rounded.PlayArrow, "Run command", { submit() }, enabled = input.isNotBlank())
         }
     }
 
@@ -180,11 +187,11 @@ private fun ShellEntryView(e: ShellEntry, onRerun: () -> Unit, onStop: () -> Uni
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (e.state == ShellState.RUNNING) {
-                OutlinedButton(onClick = onStop) { Text("Stop") }
+                IconAction(Icons.Rounded.Stop, "Stop command", onStop, tint = MaterialTheme.colorScheme.error)
             } else {
                 CopyButton(e.command, "Copy command")
                 if (e.output.isNotEmpty()) CopyButton(e.output, "Copy output")
-                TextButton(onClick = onRerun, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) { Text("Run again", fontSize = 12.sp) }
+                IconAction(Icons.Rounded.Refresh, "Run again", onRerun)
             }
         }
     }

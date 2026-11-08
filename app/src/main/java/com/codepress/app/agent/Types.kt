@@ -5,7 +5,13 @@ import kotlinx.serialization.json.JsonObject
 /** A tool the model may call. [schema] is a JSON Schema object describing the arguments. */
 data class ToolSpec(val name: String, val description: String, val schema: JsonObject)
 
-data class ToolCall(val id: String, val name: String, val arguments: JsonObject)
+data class ToolCall(
+    val id: String,
+    val name: String,
+    val arguments: JsonObject,
+    /** Provider specific data that must be sent back with the call (Gemini thought signature). */
+    val extra: String? = null,
+)
 
 data class ToolResult(
     val callId: String,

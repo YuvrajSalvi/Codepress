@@ -1,5 +1,14 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.ui.graphics.vector.ImageVector
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,11 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 
-private enum class Screen(val label: String, val glyph: String) {
-    CHAT("Chat", "✎"),
-    FILES("Files", "▦"),
-    SHELL("Shell", "›_"),
-    SETTINGS("Settings", "⚙"),
+private enum class Screen(val label: String, val icon: ImageVector) {
+    CHAT("Chat", Icons.Rounded.Chat),
+    FILES("Files", Icons.Rounded.Folder),
+    SHELL("Shell", Icons.Rounded.Terminal),
+    SETTINGS("Settings", Icons.Rounded.Settings),
 }
 
 @Composable
@@ -50,8 +59,15 @@ fun CodePressRoot(vm: ChatViewModel) {
                         NavigationBarItem(
                             selected = current == s,
                             onClick = { screen = s.name },
-                            icon = { Text(s.glyph) },
+                            icon = { Icon(s.icon, contentDescription = s.label) },
                             label = { Text(s.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
                         )
                     }
                 }

@@ -1,5 +1,13 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -68,6 +76,8 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
     var openAiBase by remember { mutableStateOf(s.openAiBaseUrl) }
     var openAiKey by remember { mutableStateOf(s.apiKey(ProviderType.OPENAI)) }
     var openAiModel by remember { mutableStateOf(s.model(ProviderType.OPENAI)) }
+    var geminiKey by remember { mutableStateOf(s.apiKey(ProviderType.GEMINI)) }
+    var geminiModel by remember { mutableStateOf(s.model(ProviderType.GEMINI)) }
     var autoApprove by remember { mutableStateOf(s.autoApprove) }
     var downloadUrl by remember { mutableStateOf("") }
 
@@ -84,8 +94,17 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
             fetching = true
             fetchError = null
             try {
-                fetched = if (provider == ProviderType.ANTHROPIC) ModelLists.anthropic(anthropicKey) else ModelLists.openAi(openAiBase, openAiKey)
+                fetched = when (provider) {
+                    ProviderType.ANTHROPIC -> ModelLists.anthropic(anthropicKey)
+                    ProviderType.GEMINI -> ModelLists.gemini(geminiKey)
+                    else -> ModelLists.openAi(openAiBase, openAiKey)
+                }
                 if (fetched.isEmpty()) fetchError = "The provider returned no models."
+                if (provider == ProviderType.GEMINI && fetched.isNotEmpty() && geminiModel !in fetched) {
+                    geminiModel = ModelLists.pickDefault(fetched)
+                    s.setModel(ProviderType.GEMINI, geminiModel)
+                    vm.bump()
+                }
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -97,13 +116,21 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
         }
     }
 
+    // Gemini: as soon as a key is pasted, load the models it can use and pick a sensible one.
+    LaunchedEffect(provider, geminiKey) {
+        if (provider == ProviderType.GEMINI && geminiKey.length >= 30) {
+            delay(800)
+            fetchModels()
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = { Text("Settings") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { IconAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack) },
             )
         },
     ) { inner ->
@@ -139,6 +166,17 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     Text("Anthropic", style = MaterialTheme.typography.titleMedium)
                     SecretField("API key", anthropicKey) { anthropicKey = it; s.setApiKey(ProviderType.ANTHROPIC, it); vm.bump() }
                     ModelField(anthropicModel, { anthropicModel = it; s.setModel(ProviderType.ANTHROPIC, it); vm.bump() }, fetched, fetching, fetchError, anthropicKey.isNotBlank(), ::fetchModels)
+                }
+
+                ProviderType.GEMINI -> {
+                    Text("Google Gemini", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Paste your Gemini API key from Google AI Studio. The models available to your key load by themselves, just tap one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SecretField("API key", geminiKey) { geminiKey = it; s.setApiKey(ProviderType.GEMINI, it); fetched = emptyList(); fetchError = null; vm.bump() }
+                    ModelField(geminiModel, { geminiModel = it; s.setModel(ProviderType.GEMINI, it); vm.bump() }, fetched, fetching, fetchError, geminiKey.isNotBlank(), ::fetchModels)
                 }
 
                 ProviderType.OPENAI -> {
@@ -184,7 +222,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                                 Text(f.name, style = MaterialTheme.typography.bodyMedium)
                                 Text("${f.length() / (1024 * 1024)} MB", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            TextButton(onClick = { vm.deleteModel(f.name) }) { Text("Delete") }
+                            IconAction(Icons.Rounded.Delete, "Delete model", { vm.deleteModel(f.name) })
                         }
                     }
                     OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }, enabled = !modelBusy) { Text("Import .gguf from phone storage") }
@@ -248,7 +286,7 @@ private fun SecretField(label: String, value: String, onChange: (String) -> Unit
         singleLine = true,
         visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon = { TextButton(onClick = { show = !show }) { Text(if (show) "Hide" else "Show") } },
+        trailingIcon = { IconAction(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, if (show) "Hide key" else "Show key", { show = !show }) },
         modifier = Modifier.fillMaxWidth(),
     )
 }

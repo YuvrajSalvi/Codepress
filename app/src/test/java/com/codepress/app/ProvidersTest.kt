@@ -96,3 +96,42 @@ class ProvidersTest {
         assertEquals("t1", (msgs[3] as JsonObject).str("tool_call_id"))
     }
 }
+
+class GeminiProviderTest {
+    @org.junit.Test
+    fun streamsTextAndFunctionCallWithSignature() {
+        var shown = ""
+        val acc = com.codepress.app.llm.GeminiProvider.Accumulator { shown = it }
+        acc.onData("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hi \"}]}}]}")
+        acc.onData("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"there\"},{\"functionCall\":{\"name\":\"read_file\",\"args\":{\"path\":\"a.txt\"}},\"thoughtSignature\":\"sig123\"}]}}]}")
+        val turn = acc.result()
+        org.junit.Assert.assertEquals("Hi there", shown)
+        org.junit.Assert.assertEquals(1, turn.toolCalls.size)
+        org.junit.Assert.assertEquals("a.txt", turn.toolCalls[0].arguments.str("path"))
+        org.junit.Assert.assertEquals("sig123", turn.toolCalls[0].extra)
+    }
+
+    @org.junit.Test
+    fun contentsRoundTripSignatureAndFunctionResponse() {
+        val call = com.codepress.app.agent.ToolCall("g1", "read_file", kotlinx.serialization.json.buildJsonObject { put("path", "a") }, "sigX")
+        val history = listOf(
+            com.codepress.app.agent.ChatMessage.User("hi"),
+            com.codepress.app.agent.ChatMessage.Assistant("", listOf(call)),
+            com.codepress.app.agent.ChatMessage.Tool(listOf(com.codepress.app.agent.ToolResult("g1", "read_file", "data", false))),
+        )
+        val contents = com.codepress.app.llm.GeminiProvider.toContents(history)
+        org.junit.Assert.assertEquals(3, contents.size)
+        val modelParts = (contents[1] as kotlinx.serialization.json.JsonObject)["parts"] as kotlinx.serialization.json.JsonArray
+        val part = modelParts[0] as kotlinx.serialization.json.JsonObject
+        org.junit.Assert.assertEquals("sigX", part.str("thoughtSignature"))
+        org.junit.Assert.assertTrue(part["functionCall"] != null)
+        val resp = (((contents[2] as kotlinx.serialization.json.JsonObject)["parts"] as kotlinx.serialization.json.JsonArray)[0] as kotlinx.serialization.json.JsonObject)["functionResponse"] as kotlinx.serialization.json.JsonObject
+        org.junit.Assert.assertEquals("read_file", resp.str("name"))
+    }
+
+    @org.junit.Test
+    fun picksStableFlashModel() {
+        val list = listOf("gemini-3-pro-preview", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro")
+        org.junit.Assert.assertEquals("gemini-2.5-flash", com.codepress.app.llm.ModelLists.pickDefault(list))
+    }
+}

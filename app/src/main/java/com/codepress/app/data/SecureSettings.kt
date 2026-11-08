@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKey
 
 enum class ProviderType(val label: String) {
     ANTHROPIC("Anthropic (Claude)"),
+    GEMINI("Google Gemini"),
     OPENAI("OpenAI-compatible"),
     LOCAL("On-device model (llama.cpp)"),
 }
@@ -55,6 +56,11 @@ class SecureSettings(context: Context) {
         ProviderType.ANTHROPIC -> when {
             apiKey(ProviderType.ANTHROPIC).isBlank() -> "Add your Anthropic API key in Settings."
             model(ProviderType.ANTHROPIC).isBlank() -> "Choose a model in Settings."
+            else -> null
+        }
+        ProviderType.GEMINI -> when {
+            apiKey(ProviderType.GEMINI).isBlank() -> "Add your Gemini API key in Settings."
+            model(ProviderType.GEMINI).isBlank() -> "Choose a Gemini model in Settings (the list loads after you paste the key)."
             else -> null
         }
         ProviderType.OPENAI -> when {
