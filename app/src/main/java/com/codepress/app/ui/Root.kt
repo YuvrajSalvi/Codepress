@@ -1,5 +1,11 @@
 package com.codepress.app.ui
 
+import androidx.compose.runtime.remember
+
+import androidx.compose.runtime.mutableIntStateOf
+
+import androidx.compose.material.icons.rounded.Code
+
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -42,6 +48,7 @@ import com.codepress.app.data.Project
 private enum class Screen(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Rounded.Chat),
     FILES("Files", Icons.Rounded.Folder),
+    EDITOR("Editor", Icons.Rounded.Code),
     SHELL("Shell", Icons.Rounded.Terminal),
 }
 
@@ -51,6 +58,7 @@ private const val NOTIFICATION_PERMISSION = "android.permission.POST_NOTIFICATIO
 fun CodePressRoot(vm: ChatViewModel) {
     val project by vm.project.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
+    val inspect by vm.inspect.collectAsStateWithLifecycle()
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
 
     // Android 13+ needs a one-time permission to show notifications.
@@ -66,8 +74,13 @@ fun CodePressRoot(vm: ChatViewModel) {
 
     val p = project
     val pv = preview
+    val ins = inspect
     when {
-        pv != null -> PreviewScreen(pv) { vm.closePreview() }
+        ins != null -> {
+            BackHandler { vm.closeInspect() }
+            InspectScreen(vm, ins.file, ins.title) { vm.closeInspect() }
+        }
+        pv != null -> PreviewScreen(vm, pv) { vm.closePreview() }
         settingsOpen -> {
             BackHandler { settingsOpen = false }
             SettingsScreen(vm) { settingsOpen = false }
@@ -85,6 +98,17 @@ private fun ProjectHome(vm: ChatViewModel, project: Project, onSettings: () -> U
     BackHandler(enabled = current == Screen.CHAT) { vm.closeProject() }
 
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
+    // Jump to a tab when something else asks for it (Open in editor, Open in Files, Ask AI...).
+    val editorReq by vm.editorRequest.collectAsStateWithLifecycle()
+    val filesReq by vm.filesRequest.collectAsStateWithLifecycle()
+    val chatReq by vm.chatRequest.collectAsStateWithLifecycle()
+    var seenEditor by remember { mutableIntStateOf(editorReq) }
+    var seenFiles by remember { mutableIntStateOf(filesReq) }
+    var seenChat by remember { mutableIntStateOf(chatReq) }
+    LaunchedEffect(editorReq) { if (editorReq != seenEditor) { seenEditor = editorReq; screen = Screen.EDITOR.name } }
+    LaunchedEffect(filesReq) { if (filesReq != seenFiles) { seenFiles = filesReq; screen = Screen.FILES.name } }
+    LaunchedEffect(chatReq) { if (chatReq != seenChat) { seenChat = chatReq; screen = Screen.CHAT.name } }
     val unseenFiles by vm.unseenFiles.collectAsStateWithLifecycle()
     val shellEntries by vm.shell.entries.collectAsStateWithLifecycle()
     val shellSeen by vm.shellSeen.collectAsStateWithLifecycle()
@@ -101,7 +125,8 @@ private fun ProjectHome(vm: ChatViewModel, project: Project, onSettings: () -> U
     Column(Modifier.fillMaxSize().imePadding()) {
         Box(Modifier.weight(1f)) {
             when (current) {
-                Screen.FILES -> FilesScreen(vm) { screen = Screen.CHAT.name }
+                Screen.FILES -> FilesScreen(vm, onBack = { screen = Screen.CHAT.name }, onOpenEditor = { screen = Screen.EDITOR.name })
+                Screen.EDITOR -> EditorScreen(vm) { screen = Screen.CHAT.name }
                 Screen.SHELL -> ShellScreen(vm)
                 else -> ChatScreen(
                     vm,

@@ -67,6 +67,7 @@ object ChatPersistence {
             put("id", x.id)
             put("created", buildJsonArray { x.created.forEach { add(JsonPrimitive(it)) } })
             put("updated", buildJsonArray { x.updated.forEach { add(JsonPrimitive(it)) } })
+            put("deleted", buildJsonArray { x.deleted.forEach { add(JsonPrimitive(it)) } })
         }
     }
 
@@ -129,7 +130,7 @@ object ChatPersistence {
                 )
             }
             "notice" -> UiItem.Notice(id, o.s("text").orEmpty(), o.b("error"))
-            "files" -> UiItem.Files(id, o.strings("created"), o.strings("updated"))
+            "files" -> UiItem.Files(id, o.strings("created"), o.strings("updated"), o.strings("deleted"))
             else -> null
         }
     }

@@ -56,10 +56,14 @@ class ShellRunner(private val workspace: Workspace) {
     private fun label(dir: File): String =
         "~" + if (dir.path == workspace.root.path) "" else "/" + workspace.relative(dir)
 
-    suspend fun run(command: String, origin: ShellOrigin, timeoutSec: Int = 60, tag: String? = null): ShellEntry =
+    /** Set by the app: opens a workspace file in the built-in editor (used by the nano / vi / edit commands). */
+    var openEditor: ((String) -> Unit)? = null
+
+    suspend fun run(command: String, origin: ShellOrigin, timeoutSec: Int = 60, tag: String? = null, onStart: (Long) -> Unit = {}, workDir: String? = null): ShellEntry =
         withContext(Dispatchers.IO) {
             val id = counter.incrementAndGet()
-            val dir = if (origin == ShellOrigin.AI) workspace.root else cwd
+            onStart(id)
+            val dir = if (workDir != null) workspace.resolve(workDir.ifEmpty { "." }) else if (origin == ShellOrigin.AI) workspace.root else cwd
             val started = System.nanoTime()
             fun elapsed() = (System.nanoTime() - started) / 1_000_000
             _entries.update { (it + ShellEntry(id, tag, command, origin, label(dir), ShellState.RUNNING, "", null, 0)).takeLast(MAX_ENTRIES) }
@@ -68,6 +72,12 @@ class ShellRunner(private val workspace: Workspace) {
             }
 
             val trimmed = command.trim()
+            CommandGuard.check(command, dir, workspace.root)?.let {
+                return@withContext finish(id, ShellState.FAILED, it, 126, elapsed())
+            }
+            builtin(trimmed, dir, origin)?.let { (code, text) ->
+                return@withContext finish(id, if (code == 0) ShellState.COMPLETED else ShellState.FAILED, text, code, elapsed())
+            }
             if (origin == ShellOrigin.USER && (trimmed == "cd" || trimmed.startsWith("cd "))) {
                 val arg = trimmed.removePrefix("cd").trim().trim('"', '\'')
                 val target = when {
@@ -163,6 +173,76 @@ class ShellRunner(private val workspace: Workspace) {
             }
             finish(id, state, text.trim(), code, elapsed())
         }
+
+    private fun splitArgs(cmd: String): List<String>? {
+        if (cmd.any { it in "|&;<>$`" }) return null
+        val out = mutableListOf<String>()
+        val cur = StringBuilder()
+        var quote: Char? = null
+        for (c in cmd) {
+            when {
+                quote != null -> if (c == quote) quote = null else cur.append(c)
+                c == '"' || c == '\'' -> quote = c
+                c.isWhitespace() -> if (cur.isNotEmpty()) { out += cur.toString(); cur.clear() }
+                else -> cur.append(c)
+            }
+        }
+        if (cur.isNotEmpty()) out += cur.toString()
+        return out
+    }
+
+    /** unzip / zip / nano that work without any installed tools. Returns null for everything else. */
+    private fun builtin(cmd: String, dir: File, origin: ShellOrigin): Pair<Int, String>? {
+        val parts = splitArgs(cmd) ?: return null
+        if (parts.isEmpty()) return null
+        val ops = FileOps(workspace)
+        fun rel(p: String): String {
+            val f = (if (p.startsWith("/")) File(workspace.root, p.trimStart('/')) else File(dir, p)).canonicalFile
+            require(workspace.contains(f)) { "outside the project folder" }
+            return workspace.relative(f).let { if (it == ".") "" else it }
+        }
+        return try {
+            when (parts[0]) {
+                "unzip" -> {
+                    val args = parts.drop(1)
+                    var dest: String? = null
+                    val names = mutableListOf<String>()
+                    var i = 0
+                    while (i < args.size) {
+                        when {
+                            args[i] == "-d" && i + 1 < args.size -> { dest = args[i + 1]; i++ }
+                            args[i].startsWith("-") -> {}
+                            else -> names += args[i]
+                        }
+                        i++
+                    }
+                    val zip = names.firstOrNull() ?: return 1 to "usage: unzip [-d dir] file.zip"
+                    val zipRel = rel(zip)
+                    val destRel = if (dest != null) rel(dest) else workspace.relative(dir).let { if (it == ".") "" else it }
+                    val n = ops.unzip(zipRel, destRel)
+                    0 to "Extracted $n file${if (n == 1) "" else "s"} from ${zip.substringAfterLast('/')}" + (if (dest != null) " into $dest" else "")
+                }
+                "zip" -> {
+                    val args = parts.drop(1).filter { !it.startsWith("-") }
+                    if (args.size < 2) return 1 to "usage: zip [-r] out.zip file-or-folder..."
+                    val n = ops.zipToFile(rel(args[0]), args.drop(1).map { rel(it) })
+                    0 to "Created ${args[0]} with $n entr${if (n == 1) "y" else "ies"}"
+                }
+                "nano", "vi", "vim", "edit" -> {
+                    val file = parts.getOrNull(1) ?: return 1 to "usage: ${parts[0]} file"
+                    if (origin == ShellOrigin.AI) return 1 to "${parts[0]} is interactive and cannot be used by the agent. Use write_file or edit_file instead."
+                    val r = rel(file)
+                    val f = workspace.resolve(r)
+                    if (!f.exists()) { f.parentFile?.mkdirs(); f.createNewFile() }
+                    openEditor?.invoke(r)
+                    0 to "Opened ${file} in the CodePress editor (Editor tab)."
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            1 to "${parts[0]}: ${e.message ?: e.javaClass.simpleName}"
+        }
+    }
 
     /** Stops a running command (user or AI). */
     fun stop(id: Long) {

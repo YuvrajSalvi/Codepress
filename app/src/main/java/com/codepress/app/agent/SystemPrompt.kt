@@ -1,6 +1,16 @@
 package com.codepress.app.agent
 
 object SystemPrompt {
+    val localGuide: String = """
+How to use your tools (follow this exactly, one step at a time):
+1. To see which files exist: call list_dir with {"path": "."}.
+2. To read a file: call read_file with {"path": "name.txt"}.
+3. To create a file: call write_file with {"path": "name.txt", "content": "..."}.
+4. To change part of a file: call edit_file with {"path", "old_text", "new_text"}.
+5. To run a command: call run_command with {"command": "ls -la"}.
+Always look first (list_dir) before changing anything. After you write a file, read it or list the folder to check it. At the end, tell the user the names of the files you created or changed.
+""".trim()
+
     val base: String = """
 You are CodePress, an AI coding agent that runs inside an Android app.
 
@@ -17,7 +27,16 @@ How to work:
 """.trim()
 
     /** Base prompt plus the project's own rules from .codepress/instructions.md, when that file exists. */
-    fun build(workspace: Workspace): String {
+    fun build(workspace: Workspace, local: Boolean = false): String {
+        val base = if (local) base + "\n\n" + localGuide else base
+        val types = try { FileOps(workspace).detectProject() } catch (e: Exception) { emptyList() }
+        val context = buildString {
+            append("\n\nProject context: your current directory is the project's root folder; every path is relative to it and you cannot leave it. ")
+            append("Folders can be created with `mkdir -p src/components`. ZIP files can be extracted with `unzip file.zip -d folder` and created with `zip -r out.zip folder`. ")
+            append("Python, Node.js, gcc, PHP and similar runtimes are usually NOT installed on this phone: check with `which python3` before using one, and tell the user if it is missing instead of pretending it works. ")
+            append(if (types.isEmpty()) "No project type was detected yet." else "Detected project type: ${types.joinToString(", ")}.")
+        }
+        val base = base + context
         val file = try {
             workspace.resolve(".codepress/instructions.md")
         } catch (e: Exception) {

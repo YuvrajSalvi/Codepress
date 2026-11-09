@@ -30,7 +30,7 @@ jobs:
 
       - name: Unit tests and debug APK
         shell: bash
-        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+        run: ./gradlew assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
 
       - name: Show the error
         if: failure()

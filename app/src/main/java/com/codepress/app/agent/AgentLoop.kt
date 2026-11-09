@@ -26,6 +26,7 @@ class AgentLoop(
     private val autoApprove: Boolean,
     private val maxSteps: Int = 30,
     private val systemPrompt: () -> String = { SystemPrompt.base },
+    private val isAutoApproved: () -> Boolean = { autoApprove },
 ) {
     /**
      * Runs the conversation until the model stops asking for tools.
@@ -54,7 +55,7 @@ class AgentLoop(
                 for (call in turn.toolCalls) {
                     var denied = false
                     val result: ToolResult
-                    val allowed = !tools.needsApproval(call.name) || autoApprove || listener.requestApproval(call)
+                    val allowed = !tools.needsApproval(call.name) || isAutoApproved() || listener.requestApproval(call)
                     if (!allowed) {
                         denied = true
                         result = ToolResult(call.id, call.name, "The user denied this action. Do not retry it; ask what to do instead.", true)

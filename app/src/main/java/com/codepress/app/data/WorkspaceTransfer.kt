@@ -38,13 +38,13 @@ class WorkspaceTransfer(private val context: Context, private val workspace: Wor
         count
     }
 
-    suspend fun importFiles(uris: List<Uri>): Int = withContext(Dispatchers.IO) {
+    suspend fun importFiles(uris: List<Uri>, destDir: File = workspace.root): Int = withContext(Dispatchers.IO) {
         var count = 0
         for (uri in uris) {
             val doc = DocumentFile.fromSingleUri(context, uri) ?: continue
             val name = (doc.name ?: "file").replace('/', '_')
             context.contentResolver.openInputStream(uri)?.use { input ->
-                File(workspace.root, name).outputStream().use { input.copyTo(it) }
+                File(destDir, name).outputStream().use { input.copyTo(it) }
                 count++
             }
         }

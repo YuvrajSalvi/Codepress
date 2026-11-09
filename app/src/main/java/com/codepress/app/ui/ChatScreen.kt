@@ -1,5 +1,13 @@
 package com.codepress.app.ui
 
+import androidx.compose.material.icons.rounded.Code
+
+import androidx.compose.material.icons.rounded.LockOpen
+
+import androidx.compose.ui.graphics.Color
+
+import androidx.compose.material3.OutlinedTextFieldDefaults
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -83,6 +91,10 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
     val download = rememberFileDownloader(vm)
     val listState = rememberLazyListState()
     val view = LocalView.current
+    val lastAssistantId = uiItems.lastOrNull { it is UiItem.Assistant }?.id
+    val draft by vm.draft.collectAsStateWithLifecycle()
+    val alwaysAllow by vm.allowAlwaysFlow.collectAsStateWithLifecycle()
+    LaunchedEffect(draft) { draft?.let { input = it; vm.consumeDraft() } }
     val attention = !running && uiItems.lastOrNull().let { it is UiItem.Notice && it.isError }
 
     // Keep the screen on while the agent works, so Android does not freeze the app mid-task.
@@ -113,6 +125,7 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
                     }
                 },
                 actions = {
+                    if (alwaysAllow) IconAction(Icons.Rounded.LockOpen, "Always allow is on. Tap to ask again", { vm.resetAlwaysAllow() }, tint = MaterialTheme.colorScheme.secondary)
                     IconAction(Icons.Rounded.DeleteSweep, "Clear chat", { confirmClear = true }, enabled = uiItems.isNotEmpty() && !running)
                     IconAction(Icons.Rounded.Settings, "Settings", onSettings)
                 },
@@ -147,9 +160,12 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
                     ) {
                         items(uiItems.asReversed(), key = { it.id }) { item ->
                             when (item) {
-                                is UiItem.User -> UserBubble(item.text)
-                                is UiItem.Assistant -> AssistantText(
-                                    item.text,
+                                is UiItem.User -> UserMessage(item, vm, running)
+                                is UiItem.Assistant -> AssistantMessage(
+                                    item,
+                                    vm,
+                                    isLast = item.id == lastAssistantId,
+                                    running = running,
                                     onRun = { cmd -> vm.runInShell(cmd); onOpenShell() },
                                     onPreview = { code, lang -> vm.previewCode(code, lang) },
                                 )
@@ -178,9 +194,18 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Ask CodePress to build or fix something…") },
+                    placeholder = { Text("Ask CodePress to build or fix something…", color = Color.White.copy(alpha = 0.72f)) },
                     maxLines = 6,
                     shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = ComposerBlue,
+                        unfocusedContainerColor = ComposerBlue,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color.White.copy(alpha = 0.55f),
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
                 )
                 Spacer(Modifier.width(8.dp))
                 if (running) {
@@ -227,7 +252,7 @@ private fun EmptyState(modifier: Modifier) {
 }
 
 @Composable
-private fun UserBubble(text: String) {
+fun UserBubble(text: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -243,7 +268,7 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AssistantText(text: String, onRun: (String) -> Unit, onPreview: (String, String) -> Unit) {
+fun AssistantText(text: String, onRun: (String) -> Unit, onPreview: (String, String) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         text.split("```").forEachIndexed { i, part ->
             if (i % 2 == 1) {
@@ -258,10 +283,10 @@ private fun AssistantText(text: String, onRun: (String) -> Unit, onPreview: (Str
     }
 }
 
-/** Files the AI created or changed: each one can be downloaded (and html can be run) right from the chat. */
+/** Files and folders the AI created, changed or deleted. Each can be opened, run or downloaded right from the chat. */
 @Composable
 private fun FilesCard(item: UiItem.Files, vm: ChatViewModel, download: (String) -> Unit, onOpenFiles: () -> Unit) {
-    val all = item.created.map { it to true } + item.updated.map { it to false }
+    val all = item.created.map { it to "new" } + item.updated.map { it to "updated" } + item.deleted.map { it to "deleted" }
     val shown = all.take(8)
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -270,27 +295,37 @@ private fun FilesCard(item: UiItem.Files, vm: ChatViewModel, download: (String) 
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp, end = 4.dp)) {
+            val folders = item.created.count { it.endsWith("/") }
+            val newFiles = item.created.size - folders
             val summary = buildList {
-                if (item.created.isNotEmpty()) add("${item.created.size} file${if (item.created.size == 1) "" else "s"} created")
+                if (newFiles > 0) add("$newFiles file${if (newFiles == 1) "" else "s"} created")
+                if (folders > 0) add("$folders folder${if (folders == 1) "" else "s"} created")
                 if (item.updated.isNotEmpty()) add("${item.updated.size} updated")
+                if (item.deleted.isNotEmpty()) add("${item.deleted.size} deleted")
             }.joinToString(" · ")
             Text(summary, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            shown.forEach { (path, isNew) ->
-                val size = remember(item.id, path) { runCatching { humanSize(vm.workspace.resolve(path).length()) }.getOrDefault("") }
+            shown.forEach { (path, kind) ->
+                val isDir = path.endsWith("/")
+                val clean = path.trimEnd('/')
+                val size = remember(item.id, path) { if (isDir || kind == "deleted") "" else runCatching { humanSize(vm.workspace.resolve(clean).length()) }.getOrDefault("") }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
-                        Text(path.substringAfterLast('/'), fontFamily = FontFamily.Monospace, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val dir = path.substringBeforeLast('/', "")
+                    FileIcon(clean, isDir, 34.dp)
+                    Column(Modifier.weight(1f).padding(start = 6.dp, top = 4.dp, bottom = 4.dp)) {
+                        Text(clean.substringAfterLast('/') + if (isDir) "/" else "", fontFamily = FontFamily.Monospace, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val dir = clean.substringBeforeLast('/', "")
                         Text(
-                            (if (dir.isNotEmpty()) "$dir · " else "") + size + if (isNew) "" else " · updated",
+                            (if (dir.isNotEmpty()) "$dir · " else "") + listOf(size, if (kind == "new") "" else kind).filter { it.isNotEmpty() }.joinToString(" · "),
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (kind == "deleted") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (isPreviewable(path)) IconAction(Icons.Rounded.PlayCircle, "Run / preview", { vm.previewFile(path) }, tint = MaterialTheme.colorScheme.primary)
-                    IconAction(Icons.Rounded.Download, "Download", { download(path) })
+                    if (kind != "deleted") {
+                        if (!isDir && isPreviewable(clean)) IconAction(Icons.Rounded.PlayCircle, "Run / preview", { vm.previewFile(clean) }, tint = MaterialTheme.colorScheme.primary)
+                        if (!isDir) IconAction(Icons.Rounded.Code, "Open in editor", { vm.openInEditor(clean) })
+                        IconAction(Icons.Rounded.Download, if (isDir) "Download folder as ZIP" else "Download", { download(path) })
+                    }
                 }
             }
             TextButton(onClick = onOpenFiles) { Text(if (all.size > shown.size) "+${all.size - shown.size} more in Files" else "Open in Files", fontSize = 12.sp) }
@@ -380,6 +415,7 @@ private fun ToolCard(item: UiItem.Tool, vm: ChatViewModel, onOpenShell: () -> Un
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { vm.answerApproval(true) }) { Text("Allow") }
                     OutlinedButton(onClick = { vm.answerApproval(false) }) { Text("Deny") }
+                    TextButton(onClick = { vm.allowAlways() }) { Text("Always allow", fontSize = 12.sp) }
                 }
             }
 

@@ -42,10 +42,13 @@ fun rememberFileDownloader(vm: ChatViewModel): (String) -> Unit {
     val launcher = rememberLauncherForActivityResult(CreateDocWithType()) { uri ->
         val path = pending
         pending = null
-        if (uri != null && path != null) vm.exportFile(path, uri)
+        if (uri != null && path != null) vm.exportFile(path.trimEnd('/'), uri)
     }
     return { path ->
         pending = path
-        launcher.launch(path.substringAfterLast('/') to mimeFor(path))
+        val folder = path.endsWith("/")
+        val clean = path.trimEnd('/')
+        val name = clean.substringAfterLast('/').ifEmpty { "project" }
+        launcher.launch(if (folder) "$name.zip" to "application/zip" else name to mimeFor(path))
     }
 }
