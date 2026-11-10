@@ -115,6 +115,7 @@ fun TerminalTab(vm: ChatViewModel) {
     val scope = rememberCoroutineScope()
     var installJob by remember { mutableStateOf<Job?>(null) }
     var installError by remember { mutableStateOf<String?>(null) }
+    var installing by remember { mutableStateOf(false) }
     var generation by remember { mutableIntStateOf(0) }
     val result = remember(root.path, generation) {
         if (generation == 0) TerminalHost.session(context, root, linuxEnv) else TerminalHost.restart(context, root, linuxEnv)
@@ -147,18 +148,22 @@ fun TerminalTab(vm: ChatViewModel) {
                     )
                     if (linuxEnv.isInstalled) {
                         Text("The root filesystem is ready; installing it again will not add the missing native binaries.", style = MaterialTheme.typography.bodySmall)
-                    } else if (installJob?.isActive == true) {
+                    } else if (installing) {
                         LinearProgressIndicator(progress = { progress.percent / 100f }, modifier = Modifier.fillMaxWidth())
                         Text(progress.message, style = MaterialTheme.typography.bodySmall)
-                        OutlinedButton(onClick = { installJob?.cancel(); installJob = null; linuxEnv.cancelProgress() }) { Text("Cancel") }
+                        OutlinedButton(onClick = { installJob?.cancel(); installJob = null; installing = false; linuxEnv.cancelProgress() }) { Text("Cancel") }
                     } else if (!linuxEnv.isInstalled) {
                         installError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                         Button(onClick = {
                             installError = null
+                            installing = true
                             installJob = scope.launch {
                                 try { linuxEnv.install(); generation++ }
                                 catch (e: kotlinx.coroutines.CancellationException) { linuxEnv.cancelProgress(); throw e }
-                                catch (e: Throwable) { installError = e.message ?: "Linux installation failed. Please retry." }
+                                catch (e: Throwable) {
+                                    installError = (e.message ?: "Linux installation failed.") + "\n\n" + linuxEnv.readLog().takeLast(600)
+                                }
+                                finally { installing = false }
                             }
                         }) { Text(if (installError == null) "Install" else "Retry") }
                     }

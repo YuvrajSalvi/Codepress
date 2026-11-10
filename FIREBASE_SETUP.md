@@ -16,8 +16,17 @@ It targets package `com.codepress.app` and includes a web OAuth client ID.
    restrict each user's data to `request.auth.uid`.
 4. Enable Cloud Storage and apply equivalent per-user path rules.
 
-## Important
-This commit wires the Firebase SDK and app configuration only. It does not yet implement
-the sign-in screen, Firestore chat synchronization, Storage project-file synchronization,
-conflict resolution, or offline queue. Do not treat SDK wiring as completed cloud sync.
+## Implemented
+- Google sign-in screen on first launch (`ui/LoginScreen.kt`, `data/CloudAuth.kt`), with "Skip for now".
+- Chats are backed up to Firestore at `users/{uid}/chats/{projectId}` and restored after sign-in.
+
+## Not implemented
+Storage sync of project files, conflict resolution and an offline queue. Chats over ~900 KB are not backed up (Firestore 1 MiB limit).
+
+## Required for Google sign-in to work
+Add the SHA-1 of the key that signs your APK (debug key for CI builds) in Firebase, then re-download
+`google-services.json`. Without a type-1 Android OAuth client in that file, sign-in fails with error 10.
+
+Suggested Firestore rule:
+`match /users/{uid}/{document=**} { allow read, write: if request.auth != null && request.auth.uid == uid; }`
 Never publish permissive Firestore/Storage rules.

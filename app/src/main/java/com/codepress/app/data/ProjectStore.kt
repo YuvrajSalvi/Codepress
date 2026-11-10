@@ -1,6 +1,8 @@
 package com.codepress.app.data
 
 import android.content.Context
+import android.os.Build
+import android.os.Environment
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -13,11 +15,54 @@ data class Project(val id: String, val name: String, val createdAt: Long, val up
  *   files/projects/<id>/workspace   - the project's files
  *   files/projects/<id>/chat.json   - the project's chat history
  * so chats and files of different projects never mix.
+ *
+ * With "All files access" the same layout lives in the visible root folder /storage/emulated/0/CodePress
+ * (created automatically); without it the app falls back to its private storage.
  */
 class ProjectStore(private val context: Context) {
 
-    private val root = File(context.filesDir, "projects").apply { mkdirs() }
-    private val indexFile = File(root, "projects.json")
+    private val prefs = context.getSharedPreferences("codepress_storage", Context.MODE_PRIVATE)
+    private val internalRoot = File(context.filesDir, "projects")
+    @Volatile private var root: File = resolveRoot().apply { mkdirs() }
+    private val indexFile: File get() = File(root, "projects.json")
+
+    /** True when the user granted All files access, so the public CodePress folder can be used. */
+    fun hasSharedAccess(): Boolean = Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
+
+    val isUsingSharedRoot: Boolean get() = root.absolutePath != internalRoot.absolutePath
+
+    private fun sharedRoot() = File(Environment.getExternalStorageDirectory(), "CodePress")
+
+    private fun resolveRoot(): File {
+        if (hasSharedAccess()) {
+            val shared = sharedRoot()
+            if (shared.isDirectory || shared.mkdirs()) return shared
+        }
+        return internalRoot
+    }
+
+    /** Called after the permission screen: creates /CodePress and copies existing projects into it. */
+    @Synchronized
+    fun adoptSharedRoot(): Boolean {
+        if (isUsingSharedRoot || !hasSharedAccess()) return false
+        val shared = sharedRoot()
+        if (!shared.isDirectory && !shared.mkdirs()) return false
+        runCatching { if (internalRoot.isDirectory) internalRoot.copyRecursively(shared, overwrite = false) }
+        root = shared
+        return true
+    }
+
+    /** Recreates a project (id preserved) from a cloud backup if it does not exist locally yet. */
+    @Synchronized
+    fun restore(id: String, name: String, chatJson: String) {
+        if (read().none { it.id == id }) {
+            val now = System.currentTimeMillis()
+            write(read() + Project(id, clean(name), now, now))
+            workspaceDir(id)
+        }
+        val chat = File(dir(id), "chat.json")
+        if (!chat.exists()) chat.writeText(chatJson)
+    }
 
     @Synchronized
     fun list(): List<Project> = read().sortedByDescending { it.updatedAt }

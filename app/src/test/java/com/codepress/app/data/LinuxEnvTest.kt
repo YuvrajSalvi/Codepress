@@ -39,6 +39,23 @@ class LinuxEnvTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun tarExtractionKeepsAlpineAbsoluteSymlinkInsideRootfs() {
+        val dir = Files.createTempDirectory("alpine-tar-test").toFile()
+        try {
+            val archive = File(dir, "alpine.tar.gz")
+            writeTar(archive) {
+                putArchiveEntry(TarArchiveEntry("./", TarConstants.LF_DIR)); closeArchiveEntry()
+                addFile("./bin/busybox", "busybox")
+                val link = TarArchiveEntry("./bin/sh", TarConstants.LF_SYMLINK)
+                link.linkName = "/bin/busybox"
+                putArchiveEntry(link); closeArchiveEntry()
+            }
+            val root = File(dir, "rootfs")
+            SafeTarExtractor.extractGzip(archive, root)
+            assertEquals("/bin/busybox", Files.readSymbolicLink(File(root, "bin/sh").toPath()).toString())
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun tarExtractionAcceptsDotRootEntries() {
         val dir = Files.createTempDirectory("alpine-tar-test").toFile()
         try {
