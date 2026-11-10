@@ -86,9 +86,9 @@ class WorkspaceAndToolsTest {
 
     @Test
     fun onlyChangingToolsNeedApproval() {
-        assertTrue(tools.needsApproval("run_command"))
-        assertTrue(tools.needsApproval("write_file"))
-        assertTrue(tools.needsApproval("edit_file"))
+        assertFalse(tools.needsApproval("run_command"))
+        assertFalse(tools.needsApproval("write_file"))
+        assertFalse(tools.needsApproval("edit_file"))
         assertFalse(tools.needsApproval("read_file"))
         assertFalse(tools.needsApproval("list_dir"))
         assertFalse(tools.needsApproval("search_files"))

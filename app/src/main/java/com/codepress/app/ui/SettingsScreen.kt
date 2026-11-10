@@ -89,7 +89,6 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
     var openAiModel by remember { mutableStateOf(s.model(ProviderType.OPENAI)) }
     val geminiKey = remember(rev) { s.apiKey(ProviderType.GEMINI) }
     var geminiModel by remember { mutableStateOf(s.model(ProviderType.GEMINI)) }
-    var autoApprove by remember { mutableStateOf(s.autoApprove) }
     var notificationsOn by remember { mutableStateOf(s.notificationsOn) }
     var notifyOnlyBackground by remember { mutableStateOf(s.notifyOnlyBackground) }
     var downloadUrl by remember { mutableStateOf("") }
@@ -276,19 +275,6 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
                 }
             }
 
-            HorizontalDivider()
-            Text("Agent", style = MaterialTheme.typography.titleMedium)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Run actions without asking")
-                    Text(
-                        "By default CodePress asks before it writes or edits a file or runs a command. Turn this on only if you trust the model.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = autoApprove, onCheckedChange = { autoApprove = it; s.autoApprove = it })
-            }
             HorizontalDivider()
             Text("Notifications", style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

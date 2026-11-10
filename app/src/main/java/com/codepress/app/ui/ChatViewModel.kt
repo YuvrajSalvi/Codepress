@@ -34,6 +34,8 @@ import com.codepress.app.agent.ToolExecutor
 import com.codepress.app.agent.ToolResult
 import com.codepress.app.agent.Workspace
 import com.codepress.app.data.LocalModels
+import com.codepress.app.data.AgentService
+import com.codepress.app.data.ApkBuilder
 import com.codepress.app.data.Notifier
 import com.codepress.app.data.Project
 import com.codepress.app.data.ProjectStore
@@ -86,7 +88,7 @@ enum class StatusKind { THINKING, WRITING, WORKING, WAITING }
 
 data class AgentStatus(val kind: StatusKind, val label: String, val since: Long)
 
-private val FILE_TOOLS = setOf("write_file", "edit_file", "run_command")
+private val FILE_TOOLS = setOf("write_file", "edit_file", "run_command", "build_apk")
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -100,8 +102,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var shell by mutableStateOf(ShellRunner(workspace))
         private set
-    private var tools = ToolExecutor(workspace, shell)
+    private var tools = newTools(workspace, shell)
     private var transfer = WorkspaceTransfer(app, workspace)
+
+    /** Tools for the AI. build_apk uses the GitHub account from Settings → Plugins. */
+    private fun newTools(ws: Workspace, sh: ShellRunner) = ToolExecutor(
+        ws,
+        sh,
+        apkBuilder = { status -> ApkBuilder(settings.githubUser, settings.githubToken).build(ws, status) },
+        onStatus = { setStatus(StatusKind.WORKING, "Building APK: $it") },
+    )
 
     private val localProvider = LocalProvider(
         engineFactory = { AiChat.getInferenceEngine(getApplication<Application>()) },
@@ -278,7 +288,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             workspace = ws
             shell = sh
             sh.openEditor = { path -> openInEditor(path) }
-            tools = ToolExecutor(ws, sh)
+            tools = newTools(ws, sh)
             transfer = WorkspaceTransfer(getApplication(), ws)
             val loaded = withContext(Dispatchers.IO) {
                 projects.loadChat(target.id)?.let { ChatPersistence.decode(it) }
@@ -356,6 +366,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun launchRun() {
         _running.value = true
         setStatus(StatusKind.THINKING, "Thinking")
+        AgentService.start(getApplication(), _project.value?.name ?: "CodePress")
         val runStartId = nextId
         val local = settings.provider == ProviderType.LOCAL
         persist()
@@ -367,7 +378,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     tools,
                     settings.autoApprove,
                     systemPrompt = { SystemPrompt.build(workspace, local) },
-                    isAutoApproved = { settings.autoApprove || _allowAlways.value },
+                    isAutoApproved = { true },
                 ).run(history, listener)
             } catch (e: CancellationException) {
                 cancelled = true
@@ -440,6 +451,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         _running.value = false
+        AgentService.stop(getApplication())
         bump() // the agent may have changed files
         persist()
         if (!cancelled && shouldNotify()) {
@@ -786,6 +798,31 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (e: Throwable) {
                 toast("Couldn't share these files: ${friendlyError(e)}")
+            }
+        }
+    }
+
+    /** Opens the Android installer for an APK in the workspace (Android asks once to allow installs from CodePress). */
+    fun installApk(path: String) {
+        val ws = workspace
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            try {
+                val apk = withContext(Dispatchers.IO) {
+                    val src = ws.resolve(path)
+                    val dir = File(app.cacheDir, "share").apply { deleteRecursively(); mkdirs() }
+                    src.copyTo(File(dir, src.name), overwrite = true)
+                }
+                val uri = FileProvider.getUriForFile(app, app.packageName + ".files", apk)
+                val install = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                app.startActivity(install)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                toast("Couldn't open the installer: ${friendlyError(e)}")
             }
         }
     }

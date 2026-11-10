@@ -125,6 +125,7 @@ fun FilesScreen(vm: ChatViewModel, onBack: () -> Unit, onOpenEditor: () -> Unit)
         when {
             e.isDir -> dir = e.path
             isZip(e.path) -> extractReq = e.path
+            e.path.endsWith(".apk", ignoreCase = true) -> vm.installApk(e.path)
             else -> { vm.openInEditor(e.path); onOpenEditor() }
         }
     }
@@ -393,6 +394,7 @@ private fun FileRow(
                     item("Preview contents", onZipPreview)
                     item("Import as new project", onImportProject)
                 } else {
+                    if (e.path.endsWith(".apk", ignoreCase = true)) item("Install APK", { vm.installApk(e.path) })
                     item("Open", onOpen)
                     if (!e.isDir && isPreviewable(e.path)) item("Run / preview", onPreview)
                 }

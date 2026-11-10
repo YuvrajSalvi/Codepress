@@ -69,8 +69,26 @@ private val HELP = listOf(
     "Tip" to "Tap a chip above the box to fill in a command, then edit it and tap Run. Commands from the AI show up here marked “AI →”.",
 )
 
+/** Shell tab: a real interactive terminal, plus the log of commands the AI ran. */
 @Composable
 fun ShellScreen(vm: ChatViewModel) {
+    var tab by rememberSaveable { mutableStateOf(0) }
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Terminal") })
+            androidx.compose.material3.FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("AI command log") })
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        if (tab == 0) TerminalTab(vm) else ShellLogContent(vm)
+    }
+}
+
+@Composable
+private fun ShellLogContent(vm: ChatViewModel) {
     val entries by vm.shell.entries.collectAsStateWithLifecycle()
     val cwd by vm.shell.cwdLabel.collectAsStateWithLifecycle()
     val history by vm.shell.history.collectAsStateWithLifecycle()
@@ -87,9 +105,9 @@ fun ShellScreen(vm: ChatViewModel) {
     }
 
     Column(Modifier.fillMaxSize().padding(top = 0.dp)) {
-        Row(Modifier.statusBarsPadding().fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Shell", style = MaterialTheme.typography.titleMedium)
+                Text("AI command log", style = MaterialTheme.typography.titleMedium)
                 Text(cwd, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconAction(Icons.Rounded.Info, "Terminal help", { showHelp = true })

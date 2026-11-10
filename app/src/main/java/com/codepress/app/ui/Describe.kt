@@ -21,6 +21,7 @@ fun runningLabel(c: ToolCall): String {
         "edit_file" -> "Editing $t"
         "search_files" -> "Searching for $t"
         "run_command" -> "Running $t"
+        "build_apk" -> "Building the APK in the cloud"
         else -> c.name
     }
 }
@@ -35,6 +36,7 @@ fun doneLabel(c: ToolCall): String {
         "edit_file" -> "Edited $t"
         "search_files" -> "Searched for $t"
         "run_command" -> "Ran $t"
+        "build_apk" -> "Built the APK"
         else -> c.name
     }
 }

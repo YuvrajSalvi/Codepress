@@ -103,7 +103,13 @@ class ShellRunner(private val workspace: Workspace) {
             val timeout = timeoutSec.coerceIn(1, 3600)
             val shell = if (File("/system/bin/sh").exists()) "/system/bin/sh" else "sh"
             val pb = ProcessBuilder(shell, "-c", command).directory(dir).redirectErrorStream(true)
-            pb.environment()["HOME"] = workspace.root.path
+            pb.environment().apply {
+                put("HOME", workspace.root.path)
+                put("TERM", "xterm-256color")
+                // Make sure the usual Android tool folders are always searched, even if the app was started with a short PATH.
+                val base = "/system/bin:/system/xbin:/vendor/bin"
+                put("PATH", listOf(workspace.root.path + "/bin", get("PATH")?.takeIf { it.isNotBlank() } ?: base).joinToString(":"))
+            }
             val process = try {
                 pb.start()
             } catch (e: Exception) {

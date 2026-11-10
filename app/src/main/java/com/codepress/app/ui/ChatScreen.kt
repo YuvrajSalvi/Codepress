@@ -125,7 +125,6 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
                     }
                 },
                 actions = {
-                    if (alwaysAllow) IconAction(Icons.Rounded.LockOpen, "Always allow is on. Tap to ask again", { vm.resetAlwaysAllow() }, tint = MaterialTheme.colorScheme.secondary)
                     IconAction(Icons.Rounded.DeleteSweep, "Clear chat", { confirmClear = true }, enabled = uiItems.isNotEmpty() && !running)
                     IconAction(Icons.Rounded.Settings, "Settings", onSettings)
                 },
@@ -198,13 +197,13 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
                     maxLines = 6,
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = ComposerBlue,
-                        unfocusedContainerColor = ComposerBlue,
+                        focusedContainerColor = Color.Black,
+                        unfocusedContainerColor = Color.Black,
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         cursorColor = Color.White,
-                        focusedBorderColor = Color.White.copy(alpha = 0.55f),
-                        unfocusedBorderColor = Color.Transparent,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.White,
                     ),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -255,13 +254,12 @@ private fun EmptyState(modifier: Modifier) {
 fun UserBubble(text: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = ComposerBlue,
             shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.widthIn(max = 320.dp),
         ) {
             SelectionContainer {
-                Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface)
+                Text(text, Modifier.padding(12.dp), color = Color.White)
             }
         }
     }

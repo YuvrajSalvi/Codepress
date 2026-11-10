@@ -26,7 +26,7 @@ val InkMuted = Color(0xFFD0D6E0)
 val InkSubtle = Color(0xFF8A8F98)
 val Lavender = Color(0xFF5E6AD2)
 
-/** Background of the message composer. */
+/** Background of the user's chat messages (the composer itself is black with a white outline). */
 val ComposerBlue = Color(0xFF5E69D1)
 val Success = Color(0xFF27A644)
 val ErrorRed = Color(0xFFE5484D)

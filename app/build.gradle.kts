@@ -54,6 +54,7 @@ android {
 
 dependencies {
     implementation(project(":lib"))
+    implementation(project(":termexec"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

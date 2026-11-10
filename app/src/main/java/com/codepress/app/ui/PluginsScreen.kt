@@ -46,14 +46,14 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
 
-private const val TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo&description=CodePress"
+private const val TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,workflow&description=CodePress"
 
 private val TOKEN_STEPS = listOf(
     "Log in to GitHub (github.com). If you do not have an account, create one first, it is free.",
     "Tap “Open GitHub token page” below. It opens the “New personal access token” page with the right permission already ticked.",
     "If you open GitHub yourself instead: profile photo → Settings → Developer settings (last item in the menu) → Personal access tokens → Tokens (classic) → Generate new token (classic).",
     "Note: type CodePress. Expiration: pick 90 days (or No expiration).",
-    "Make sure the box “repo” is ticked. Nothing else is needed.",
+    "Make sure the boxes “repo” and “workflow” are both ticked (workflow is needed to build APKs). Nothing else is needed.",
     "Scroll down and tap “Generate token”.",
     "Copy the token. It starts with ghp_ and GitHub shows it only once, so copy it right away.",
     "Come back here, type your GitHub username (the name in github.com/yourname), paste the token and tap “Save and test”.",

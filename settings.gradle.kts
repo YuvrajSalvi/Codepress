@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 rootProject.name = "CodePress"
 include(":app")
 include(":lib")
+include(":emulatorview")
+include(":termexec")

@@ -33,6 +33,9 @@ private fun objectSchema(
 class ToolExecutor(
     private val workspace: Workspace,
     val shell: ShellRunner = ShellRunner(workspace),
+    /** Builds the project into an APK and returns a message for the model. Set by the app (needs GitHub). */
+    private val apkBuilder: (suspend (status: (String) -> Unit) -> String)? = null,
+    private val onStatus: (String) -> Unit = {},
 ) {
 
     val specs: List<ToolSpec> = listOf(
@@ -88,6 +91,11 @@ class ToolExecutor(
             ),
         ),
         ToolSpec(
+            "build_apk",
+            "Build the Android project in the workspace into an installable APK (takes several minutes, runs in the cloud) and put it in the apk/ folder of the Files tab. Call it when the user asks for an APK, after the Gradle project is complete (settings.gradle.kts, app/build.gradle.kts, app/src/main/AndroidManifest.xml and the Kotlin/Java sources). If it fails it returns the compiler errors: fix the files and call it again.",
+            objectSchema(emptyList(), emptyList()),
+        ),
+        ToolSpec(
             "run_command",
             "Run a shell command (Android sh) with the workspace as the working directory. Only basic Android/toybox tools are available (ls, cat, grep, sed, mkdir, cp, mv, rm, echo, ...).",
             objectSchema(
@@ -102,9 +110,9 @@ class ToolExecutor(
 
     val names: Set<String> = specs.map { it.name }.toSet()
 
-    /** Tools that change things (files or processes) ask the user first, unless auto-approve is on. */
-    fun needsApproval(toolName: String): Boolean =
-        toolName == "write_file" || toolName == "edit_file" || toolName == "run_command"
+    /** CodePress never asks before writing a file or running a command: the agent works on its own in the background. */
+    @Suppress("UNUSED_PARAMETER")
+    fun needsApproval(toolName: String): Boolean = false
 
     suspend fun execute(call: ToolCall): ToolResult = withContext(Dispatchers.IO) {
         try {
@@ -124,6 +132,7 @@ class ToolExecutor(
             "write_file" -> writeFile(need(a, "path"), a.str("content") ?: error("Missing argument: content"))
             "edit_file" -> editFile(need(a, "path"), need(a, "old_text"), a.str("new_text") ?: error("Missing argument: new_text"))
             "search_files" -> searchFiles(need(a, "pattern"), a.str("path") ?: ".")
+            "build_apk" -> (apkBuilder ?: error("APK building is not available here.")).invoke(onStatus)
             "run_command" -> runCommand(need(a, "command"), a.int("timeout_seconds") ?: 60, call.id)
             else -> error("Unknown tool: ${call.name}")
         }
