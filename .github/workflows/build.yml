@@ -38,6 +38,12 @@ jobs:
         shell: bash
         run: ./gradlew testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
 
+      - name: Rename debug APK
+        run: |
+          APK_DIR="app/build/outputs/apk/debug"
+          test -f "$APK_DIR/app-debug.apk"
+          cp "$APK_DIR/app-debug.apk" "$APK_DIR/CodePress-0.1.0-2026.apk"
+
       - name: Show the error
         if: failure()
         shell: bash
@@ -48,5 +54,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CodePress-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: CodePress-0.1.0-2026
+          path: app/build/outputs/apk/debug/CodePress-0.1.0-2026.apk
