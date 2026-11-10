@@ -142,7 +142,8 @@ class FileOps(private val ws: Workspace) {
                 val base = if (top == ws.root) top else top.parentFile
                 val files = if (top.isFile) sequenceOf(top) else top.walkTopDown().onEnter { it.name !in skipDirs }
                 for (f in files) {
-                    val name = f.relativeTo(base).path.replace(File.separatorChar, '/').ifEmpty { continue }
+                    val name = f.relativeTo(base).path.replace(File.separatorChar, '/')
+                    if (name.isEmpty()) continue
                     if (f.isDirectory) {
                         if (f.list().isNullOrEmpty()) { zip.putNextEntry(ZipEntry("$name/")); zip.closeEntry(); n++ }
                     } else {

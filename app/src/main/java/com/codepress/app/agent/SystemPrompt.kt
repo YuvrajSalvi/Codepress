@@ -28,7 +28,7 @@ How to work:
 
     /** Base prompt plus the project's own rules from .codepress/instructions.md, when that file exists. */
     fun build(workspace: Workspace, local: Boolean = false): String {
-        val base = if (local) base + "\n\n" + localGuide else base
+        val core = if (local) base + "\n\n" + localGuide else base
         val types = try { FileOps(workspace).detectProject() } catch (e: Exception) { emptyList() }
         val context = buildString {
             append("\n\nProject context: your current directory is the project's root folder; every path is relative to it and you cannot leave it. ")
@@ -36,15 +36,15 @@ How to work:
             append("Python, Node.js, gcc, PHP and similar runtimes are usually NOT installed on this phone: check with `which python3` before using one, and tell the user if it is missing instead of pretending it works. ")
             append(if (types.isEmpty()) "No project type was detected yet." else "Detected project type: ${types.joinToString(", ")}.")
         }
-        val base = base + context
+        val prompt = core + context
         val file = try {
             workspace.resolve(".codepress/instructions.md")
         } catch (e: Exception) {
-            return base
+            return prompt
         }
-        if (!file.isFile) return base
+        if (!file.isFile) return prompt
         val text = file.readText().take(20_000).trim()
-        if (text.isEmpty()) return base
-        return base + "\n\nProject instructions (written by the user; follow them):\n" + text
+        if (text.isEmpty()) return prompt
+        return prompt + "\n\nProject instructions (written by the user; follow them):\n" + text
     }
 }

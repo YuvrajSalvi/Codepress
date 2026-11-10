@@ -50,3 +50,6 @@ Minimum Android version: 13 (API 33), because of the bundled llama.cpp Android l
 
 ## License
 MIT for CodePress. llama.cpp is MIT as well (see `llama.cpp/LICENSE`).
+
+## Editor, folders and ZIP
+Projects have their own files and chat. The Editor tab opens any text file with syntax colours, line numbers, undo/redo, find and replace, Run for HTML/SVG, and Ask AI. The Files tab supports folders, ZIP extract/create, copy, move, multi-select, download and search. The shell understands `unzip`, `zip` and `nano <file>` without extra tools, and blocks commands that leave the project folder.

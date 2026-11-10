@@ -28,7 +28,7 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Unit tests and debug APK
+      - name: Build debug APK
         shell: bash
         run: ./gradlew assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
 

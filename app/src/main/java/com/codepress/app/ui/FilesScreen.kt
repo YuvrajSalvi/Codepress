@@ -236,7 +236,7 @@ fun FilesScreen(vm: ChatViewModel, onBack: () -> Unit, onOpenEditor: () -> Unit)
         }
     }
 
-    nameReq?.let { r -> NameDialog(r.title, r.initial, r.hint, { nameReq = null }) { n -> nameReq = null; r.onOk(n) } }
+    nameReq?.let { r -> AskNameDialog(r.title, r.initial, r.hint, { nameReq = null }) { n -> nameReq = null; r.onOk(n) } }
 
     deleteReq?.let { paths ->
         val count = remember(paths) { runCatching { paths.sumOf { vm.fileOps.countFiles(it) } }.getOrDefault(0) }

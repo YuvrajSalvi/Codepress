@@ -225,13 +225,13 @@ fun EditorScreen(vm: ChatViewModel, onOpenChat: () -> Unit) {
     }
 
     // ---- dialogs
-    if (newFileOpen) NameDialog("New file", "", "e.g. main.py or src/app.js", { newFileOpen = false }) { name ->
+    if (newFileOpen) AskNameDialog("New file", "", "e.g. main.py or src/app.js", { newFileOpen = false }) { name ->
         newFileOpen = false
         val dir = tab?.path?.substringBeforeLast('/', "") ?: ""
         vm.fsCreateFile(dir, name, open = true)
     }
-    if (saveAsOpen && tab != null) NameDialog("Save as", tab.path, "path/name.ext", { saveAsOpen = false }) { name -> saveAsOpen = false; vm.saveTabAs(tab, name) }
-    if (gotoOpen && tab != null) NameDialog("Go to line", "", "line number", { gotoOpen = false }) { n -> gotoOpen = false; n.trim().toIntOrNull()?.let { tab.goToLine(it) } }
+    if (saveAsOpen && tab != null) AskNameDialog("Save as", tab.path, "path/name.ext", { saveAsOpen = false }) { name -> saveAsOpen = false; vm.saveTabAs(tab, name) }
+    if (gotoOpen && tab != null) AskNameDialog("Go to line", "", "line number", { gotoOpen = false }) { n -> gotoOpen = false; n.trim().toIntOrNull()?.let { tab.goToLine(it) } }
     if (askOpen && tab != null) AskAiDialog(tab, onDismiss = { askOpen = false }) { prompt -> askOpen = false; vm.askAiAbout(prompt); onOpenChat() }
     closeAsk?.let { i ->
         val t = ed.tabs.getOrNull(i)
@@ -260,7 +260,7 @@ fun EditorScreen(vm: ChatViewModel, onOpenChat: () -> Unit) {
 }
 
 @Composable
-fun NameDialog(title: String, initial: String, hint: String, onDismiss: () -> Unit, onOk: (String) -> Unit) {
+fun AskNameDialog(title: String, initial: String, hint: String, onDismiss: () -> Unit, onOk: (String) -> Unit) {
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
