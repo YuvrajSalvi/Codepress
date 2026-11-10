@@ -14,14 +14,21 @@ object CommandGuard {
     )
     private val allowedPrefixes = listOf("/dev/null", "/dev/zero", "/dev/urandom", "/system/bin", "/system/xbin", "/proc/cpuinfo", "/proc/meminfo")
 
-    fun check(command: String, cwd: File, root: File): String? {
+    fun check(command: String, cwd: File, root: File, linuxMode: Boolean = false): String? {
         val rootPath = root.canonicalPath
         val words = command.split(Regex("""[\s;&|<>()`$"'=,]+""")).filter { it.isNotEmpty() }
         for (w in words) {
             if (w == "/" || w == "/*" || w == "/." ) return "Blocked: \"$w\" is outside the project folder."
             if (w.startsWith("/")) {
                 val first = w.removePrefix("/").substringBefore('/')
-                if (first in systemRoots) {
+                if (linuxMode && (w == "/work" || w.startsWith("/work/"))) {
+                    val relative = w.removePrefix("/work").trimStart('/')
+                    val target = try { File(root, relative).canonicalPath } catch (_: Exception) { "" }
+                    if (target != rootPath && !target.startsWith(rootPath + File.separator))
+                        return "Blocked: \"$w\" is outside /work."
+                } else if (linuxMode && first in setOf("bin", "sbin", "usr", "etc", "lib", "lib64", "root", "var", "tmp", "opt", "run", "dev", "proc", "sys")) {
+                    // Linux system paths are part of the Alpine container, not the Android host.
+                } else if (first in systemRoots) {
                     val ok = w.startsWith(rootPath) || allowedPrefixes.any { w.startsWith(it) }
                     if (!ok) return "Blocked: \"$w\" is outside the project folder."
                 }

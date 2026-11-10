@@ -1,5 +1,7 @@
 package com.codepress.app.agent
 
+import com.codepress.app.data.LinuxEnv
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -34,7 +36,11 @@ data class ShellEntry(
  * User commands run in the current directory (changed with `cd`, kept inside the workspace);
  * AI commands always start in the workspace root.
  */
-class ShellRunner(private val workspace: Workspace) {
+class ShellRunner(
+    private val workspace: Workspace,
+    private val linuxEnv: LinuxEnv? = null,
+    private val useLinuxForAi: () -> Boolean = { false },
+) {
 
     @Volatile
     private var cwd: File = workspace.root
@@ -72,10 +78,11 @@ class ShellRunner(private val workspace: Workspace) {
             }
 
             val trimmed = command.trim()
-            CommandGuard.check(command, dir, workspace.root)?.let {
+            val linuxMode = origin == ShellOrigin.AI && useLinuxForAi() && linuxEnv?.isInstalled == true && linuxEnv.nativeBinariesPresent
+            CommandGuard.check(command, dir, workspace.root, linuxMode)?.let {
                 return@withContext finish(id, ShellState.FAILED, it, 126, elapsed())
             }
-            builtin(trimmed, dir, origin)?.let { (code, text) ->
+            if (!linuxMode) builtin(trimmed, dir, origin)?.let { (code, text) ->
                 return@withContext finish(id, if (code == 0) ShellState.COMPLETED else ShellState.FAILED, text, code, elapsed())
             }
             if (origin == ShellOrigin.USER && (trimmed == "cd" || trimmed.startsWith("cd "))) {
@@ -102,18 +109,35 @@ class ShellRunner(private val workspace: Workspace) {
 
             val timeout = timeoutSec.coerceIn(1, 3600)
             val shell = if (File("/system/bin/sh").exists()) "/system/bin/sh" else "sh"
-            val pb = ProcessBuilder(shell, "-c", command).directory(dir).redirectErrorStream(true)
+            val linuxArgs = if (linuxMode) linuxEnv!!.command(command, workspace.root, dir) else emptyList()
+            val pb = if (linuxMode) ProcessBuilder(linuxArgs) else ProcessBuilder(shell, "-c", command)
+            pb.directory(if (linuxMode) workspace.root else dir).redirectErrorStream(true)
             pb.environment().apply {
-                put("HOME", workspace.root.path)
+                put("HOME", if (linuxMode) "/root" else workspace.root.path)
                 put("TERM", "xterm-256color")
-                // Make sure the usual Android tool folders are always searched, even if the app was started with a short PATH.
-                val base = "/system/bin:/system/xbin:/vendor/bin"
-                put("PATH", listOf(workspace.root.path + "/bin", get("PATH")?.takeIf { it.isNotBlank() } ?: base).joinToString(":"))
+                if (linuxMode) {
+                    put("PWD", "/work" + workspace.relative(dir).let { if (it == ".") "" else "/$it" })
+                    put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+                    putAll(linuxEnv!!.processEnvironment())
+                } else {
+                    // Keep Android's built-in tools available in the fallback shell.
+                    val base = "/system/bin:/system/xbin:/vendor/bin"
+                    put("PATH", listOf(workspace.root.path + "/bin", get("PATH")?.takeIf { it.isNotBlank() } ?: base).joinToString(":"))
+                }
             }
             val process = try {
                 pb.start()
             } catch (e: Exception) {
-                return@withContext finish(id, ShellState.FAILED, "Could not start the command: ${e.message}", 127, elapsed())
+                if (linuxMode) {
+                    try {
+                        pb.environment().putAll(linuxEnv!!.processEnvironment(noSeccomp = true))
+                        pb.start()
+                    } catch (retry: Exception) {
+                        return@withContext finish(id, ShellState.FAILED, "Could not start Alpine Linux. Check that the packaged proot binaries match this device ABI. ${retry.message ?: e.message}", 127, elapsed())
+                    }
+                } else {
+                    return@withContext finish(id, ShellState.FAILED, "Could not start the command: ${e.message}", 127, elapsed())
+                }
             }
             processes[id] = process
             process.outputStream.close()

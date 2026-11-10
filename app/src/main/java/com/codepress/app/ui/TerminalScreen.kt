@@ -16,10 +16,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +36,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.codepress.app.data.LinuxEnv
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.ui.viewinterop.AndroidView
 import jackpal.androidterm.PtySession
 import jackpal.androidterm.emulatorview.ColorScheme
@@ -44,7 +53,7 @@ import java.io.File
 object TerminalHost {
     private val sessions = HashMap<String, PtySession>()
 
-    fun session(context: Context, root: File): Result<PtySession> {
+    fun session(context: Context, root: File, linuxEnv: LinuxEnv): Result<PtySession> {
         sessions[root.path]?.let { if (it.isRunning && !it.hasExited()) return Result.success(it) }
         return runCatching {
             val home = root.apply { mkdirs() }
@@ -63,13 +72,30 @@ object TerminalHost {
                 "ENV" to rc.path,
                 "LANG" to "en_US.UTF-8",
             )
-            PtySession("/system/bin/sh", home.path, env).also { sessions[root.path] = it }
+            val created = if (linuxEnv.isInstalled && linuxEnv.nativeBinariesPresent) {
+                val args = linuxEnv.command(null, home)
+                val linuxEnvVars = (env - "ENV") + mapOf(
+                    "HOME" to "/root",
+                    "PWD" to "/work",
+                    "TMPDIR" to "/tmp",
+                    "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "LANG" to "C.UTF-8",
+                ) + linuxEnv.processEnvironment()
+                try {
+                    PtySession(args.first(), args, home.path, linuxEnvVars)
+                } catch (firstStart: java.io.IOException) {
+                    PtySession(args.first(), args, home.path, linuxEnvVars + linuxEnv.processEnvironment(noSeccomp = true))
+                }
+            } else {
+                PtySession("/system/bin/sh", home.path, env)
+            }
+            created.also { sessions[root.path] = it }
         }
     }
 
-    fun restart(context: Context, root: File): Result<PtySession> {
+    fun restart(context: Context, root: File, linuxEnv: LinuxEnv): Result<PtySession> {
         sessions.remove(root.path)?.let { runCatching { it.finish() } }
-        return session(context, root)
+        return session(context, root, linuxEnv)
     }
 
     fun endAll() {
@@ -84,9 +110,14 @@ private const val ESC = "\u001b"
 fun TerminalTab(vm: ChatViewModel) {
     val context = LocalContext.current
     val root = vm.workspace.root
+    val linuxEnv = vm.linuxEnv
+    val progress by linuxEnv.progress.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var installJob by remember { mutableStateOf<Job?>(null) }
+    var installError by remember { mutableStateOf<String?>(null) }
     var generation by remember { mutableIntStateOf(0) }
     val result = remember(root.path, generation) {
-        if (generation == 0) TerminalHost.session(context, root) else TerminalHost.restart(context, root)
+        if (generation == 0) TerminalHost.session(context, root, linuxEnv) else TerminalHost.restart(context, root, linuxEnv)
     }
     val session = result.getOrNull()
     if (session == null) {
@@ -104,6 +135,36 @@ fun TerminalTab(vm: ChatViewModel) {
     fun arrow(c: Char) = send(if (view?.keypadApplicationMode == true) "${ESC}O$c" else "$ESC[$c")
 
     Column(Modifier.fillMaxSize()) {
+        if (!linuxEnv.isInstalled || !linuxEnv.nativeBinariesPresent) {
+            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    Text(if (linuxEnv.isInstalled) "PRoot binaries required" else "Install full Linux", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (linuxEnv.isInstalled) "Alpine is installed, but libproot.so or libproot-loader.so is missing. Add both ABI-matched files under app/src/main/jniLibs/ and rebuild. The terminal is using Android sh for now."
+                        else "About 4 MB download. Then install tools with: apk add git python3 nano nodejs gcc",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (linuxEnv.isInstalled) {
+                        Text("The root filesystem is ready; installing it again will not add the missing native binaries.", style = MaterialTheme.typography.bodySmall)
+                    } else if (installJob?.isActive == true) {
+                        LinearProgressIndicator(progress = { progress.percent / 100f }, modifier = Modifier.fillMaxWidth())
+                        Text(progress.message, style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { installJob?.cancel(); installJob = null; linuxEnv.cancelProgress() }) { Text("Cancel") }
+                    } else if (!linuxEnv.isInstalled) {
+                        installError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        Button(onClick = {
+                            installError = null
+                            installJob = scope.launch {
+                                try { linuxEnv.install(); generation++ }
+                                catch (e: kotlinx.coroutines.CancellationException) { linuxEnv.cancelProgress(); throw e }
+                                catch (e: Throwable) { installError = e.message ?: "Linux installation failed. Please retry." }
+                            }
+                        }) { Text(if (installError == null) "Install" else "Retry") }
+                    }
+                }
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),

@@ -40,7 +40,13 @@ public class PtySession extends TermSession {
      * @param extraEnv variables added to (or replacing) the app's environment
      */
     public PtySession(String shell, String cwd, Map<String, String> extraEnv) throws IOException {
+        this(shell, java.util.Collections.singletonList(shell), cwd, extraEnv);
+    }
+
+    /** Starts an executable with an explicit argv vector (argv[0] must be the executable path). */
+    public PtySession(String executable, List<String> arguments, String cwd, Map<String, String> extraEnv) throws IOException {
         super(false);
+        if (arguments == null || arguments.isEmpty()) throw new IOException("Process argument list is empty");
         master = ParcelFileDescriptor.open(new File("/dev/ptmx"), ParcelFileDescriptor.MODE_READ_WRITE);
 
         Map<String, String> env = new TreeMap<>(System.getenv());
@@ -48,7 +54,7 @@ public class PtySession extends TermSession {
         List<String> envList = new ArrayList<>();
         for (Map.Entry<String, String> e : env.entrySet()) envList.add(e.getKey() + "=" + e.getValue());
 
-        pid = Pty.createSubprocess(shell, new String[]{shell}, envList.toArray(new String[0]), cwd, master.getFd());
+        pid = Pty.createSubprocess(executable, arguments.toArray(new String[0]), envList.toArray(new String[0]), cwd, master.getFd());
 
         setTermOut(new ParcelFileDescriptor.AutoCloseOutputStream(master));
         setTermIn(new ParcelFileDescriptor.AutoCloseInputStream(master));

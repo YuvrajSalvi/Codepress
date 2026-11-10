@@ -23,6 +23,12 @@ jobs:
           yes | "$SDKM" --licenses > /dev/null || true
           "$SDKM" "ndk;29.0.13113456" "cmake;3.31.6" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Install PRoot binaries for Android ABIs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl unzip binutils
+          ./scripts/prepare-proot.sh
+
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Make gradlew executable
@@ -30,7 +36,7 @@ jobs:
 
       - name: Build debug APK
         shell: bash
-        run: ./gradlew assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
 
       - name: Show the error
         if: failure()

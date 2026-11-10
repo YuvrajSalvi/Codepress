@@ -91,6 +91,7 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
     var geminiModel by remember { mutableStateOf(s.model(ProviderType.GEMINI)) }
     var notificationsOn by remember { mutableStateOf(s.notificationsOn) }
     var notifyOnlyBackground by remember { mutableStateOf(s.notifyOnlyBackground) }
+    var useLinuxAiCommands by remember { mutableStateOf(s.useLinuxForAiCommands) }
     var downloadUrl by remember { mutableStateOf("") }
 
     var fetched by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -275,6 +276,22 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
                 }
             }
 
+            HorizontalDivider()
+            Text("Shell environment", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Use Linux for AI commands")
+                    Text(
+                        "Run the AI's run_command inside Alpine when Linux is installed. The workspace is mounted at /work.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = useLinuxAiCommands, onCheckedChange = {
+                    useLinuxAiCommands = it
+                    s.useLinuxForAiCommands = it
+                })
+            }
             HorizontalDivider()
             Text("Notifications", style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

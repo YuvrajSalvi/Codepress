@@ -51,6 +51,10 @@ class SecureSettings(context: Context) {
         get() = prefs.getString("local_model", "") ?: ""
         set(v) = prefs.edit().putString("local_model", v).apply()
 
+    var useLinuxForAiCommands: Boolean
+        get() = prefs.getBoolean("use_linux_ai_commands", false)
+        set(v) = prefs.edit().putBoolean("use_linux_ai_commands", v).apply()
+
     var autoApprove: Boolean
         get() = prefs.getBoolean("auto_approve", false)
         set(v) = prefs.edit().putBoolean("auto_approve", v).apply()

@@ -41,6 +41,7 @@ import com.codepress.app.data.Project
 import com.codepress.app.data.ProjectStore
 import com.codepress.app.data.ProviderType
 import com.codepress.app.data.SecureSettings
+import com.codepress.app.data.LinuxEnv
 import com.codepress.app.data.WorkspaceTransfer
 import com.codepress.app.data.humanSize
 import com.codepress.app.llm.AnthropicProvider
@@ -93,6 +94,7 @@ private val FILE_TOOLS = setOf("write_file", "edit_file", "run_command", "build_
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings = SecureSettings(app)
+    val linuxEnv = LinuxEnv(app)
     val projects = ProjectStore(app)
     val notifier = Notifier(app)
     val models = LocalModels(app)
@@ -100,7 +102,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // The workspace and shell belong to the open project; they are swapped when a project is opened.
     var workspace by mutableStateOf(Workspace(File(app.filesDir, "projects/_none/workspace")))
         private set
-    var shell by mutableStateOf(ShellRunner(workspace))
+    var shell by mutableStateOf(ShellRunner(workspace, linuxEnv) { settings.useLinuxForAiCommands })
         private set
     private var tools = newTools(workspace, shell)
     private var transfer = WorkspaceTransfer(app, workspace)
@@ -284,7 +286,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             val ws = Workspace(projects.workspaceDir(target.id))
-            val sh = ShellRunner(ws)
+            val sh = ShellRunner(ws, linuxEnv) { settings.useLinuxForAiCommands }
             workspace = ws
             shell = sh
             sh.openEditor = { path -> openInEditor(path) }
@@ -377,7 +379,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     buildProvider(),
                     tools,
                     settings.autoApprove,
-                    systemPrompt = { SystemPrompt.build(workspace, local) },
+                    systemPrompt = { SystemPrompt.build(workspace, local, settings.useLinuxForAiCommands && linuxEnv.isInstalled && linuxEnv.nativeBinariesPresent) },
                     isAutoApproved = { true },
                 ).run(history, listener)
             } catch (e: CancellationException) {

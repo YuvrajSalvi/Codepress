@@ -97,12 +97,13 @@ class ToolExecutor(
         ),
         ToolSpec(
             "run_command",
-            "Run a shell command (Android sh) with the workspace as the working directory. Only basic Android/toybox tools are available (ls, cat, grep, sed, mkdir, cp, mv, rm, echo, ...).",
+            "Run a shell command in the workspace. It uses Alpine Linux through proot when Linux is installed and enabled in Settings; otherwise it uses Android sh/toybox. In Alpine, the workspace is /work. Use apk add --no-cache <packages> to install missing tools.",
             objectSchema(
                 listOf("command"),
                 listOf(
                     Triple("command", "string", "The shell command to run."),
                     Triple("timeout_seconds", "integer", "Kill the command after this many seconds. Default 60, max 300."),
+                    Triple("workdir", "string", "Optional workspace-relative working directory. In Alpine it maps to /work/<path>."),
                 ),
             ),
         ),
@@ -133,7 +134,7 @@ class ToolExecutor(
             "edit_file" -> editFile(need(a, "path"), need(a, "old_text"), a.str("new_text") ?: error("Missing argument: new_text"))
             "search_files" -> searchFiles(need(a, "pattern"), a.str("path") ?: ".")
             "build_apk" -> (apkBuilder ?: error("APK building is not available here.")).invoke(onStatus)
-            "run_command" -> runCommand(need(a, "command"), a.int("timeout_seconds") ?: 60, call.id)
+            "run_command" -> runCommand(need(a, "command"), a.int("timeout_seconds") ?: 60, call.id, a.str("workdir"))
             else -> error("Unknown tool: ${call.name}")
         }
     }
@@ -227,8 +228,8 @@ class ToolExecutor(
         return out.toString().trimEnd()
     }
 
-    private suspend fun runCommand(command: String, timeoutSeconds: Int, tag: String): String {
-        val e = shell.run(command, ShellOrigin.AI, timeoutSeconds.coerceIn(1, 300), tag)
+    private suspend fun runCommand(command: String, timeoutSeconds: Int, tag: String, workDir: String?): String {
+        val e = shell.run(command, ShellOrigin.AI, timeoutSeconds.coerceIn(1, 300), tag, workDir = workDir)
         val text = e.output
         return when {
             e.exitCode == null -> text.ifEmpty { "[no output]" }

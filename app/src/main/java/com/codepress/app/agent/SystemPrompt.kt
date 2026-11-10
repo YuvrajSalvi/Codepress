@@ -21,7 +21,7 @@ How to work:
 - Look before you change things: list_dir, read_file or search_files first.
 - Use edit_file for small changes and write_file for new files or full rewrites.
 - After changing something, check your work (read the file again, or run a command).
-- The shell is Android's sh with toybox utilities. Do not assume git, python, node, gcc or a package manager exist; check first with a command like `which python`.
+- Do not assume a tool is available until you check or install it as described in the environment notes below.
 - If a tool returns an error, read it, fix the cause and try again. Do not repeat the same failing call.
 - You never need to ask the user for permission: write files and run commands directly, the app does not ask before running tools.
 - When the user asks for an Android app or an APK: create a complete Gradle project in the workspace (settings.gradle.kts, build.gradle.kts, app/build.gradle.kts, app/src/main/AndroidManifest.xml, the Kotlin or Java sources and any resources the manifest or code refers to), then call build_apk. It builds in the cloud (a few minutes) and puts the APK in the apk/ folder of the Files tab. If it returns compiler errors, fix the files and call build_apk again. Use only AndroidX / Maven dependencies, minSdk 24 or higher, and do not write gradle wrapper files (the builder supplies Gradle).
@@ -29,14 +29,20 @@ How to work:
 """.trim()
 
     /** Base prompt plus the project's own rules from .codepress/instructions.md, when that file exists. */
-    fun build(workspace: Workspace, local: Boolean = false): String {
+    fun build(workspace: Workspace, local: Boolean = false, linuxAvailable: Boolean = false): String {
         val core = if (local) base + "\n\n" + localGuide else base
         val types = try { FileOps(workspace).detectProject() } catch (e: Exception) { emptyList() }
         val context = buildString {
             append("\n\nProject context: your current directory is the project's root folder; every path is relative to it and you cannot leave it. ")
             append("Android projects can be turned into an installable APK with the build_apk tool. ")
             append("Folders can be created with `mkdir -p src/components`. ZIP files can be extracted with `unzip file.zip -d folder` and created with `zip -r out.zip folder`. ")
-            append("Python, Node.js, gcc, PHP and similar runtimes are usually NOT installed on this phone: check with `which python3` before using one, and tell the user if it is missing instead of pretending it works. ")
+            if (linuxAvailable) {
+                append("Your run_command shell is Alpine Linux under proot. The project workspace is mounted at /work; keep project-file operations inside /work. Alpine system paths such as /usr, /etc and /bin are part of the container and are allowed; never access Android host paths outside the mounted workspace. Set the optional run_command workdir argument to a workspace-relative directory when needed. ")
+                append("Alpine includes apk. If a tool is missing, install it yourself on first use with `apk add --no-cache <packages>` (for example `apk add --no-cache git python3 nano nodejs gcc`). ")
+                append("After installation, git, python3, nano, node, gcc and other Alpine packages are available in later commands. Do not claim they are missing without checking. ")
+            } else {
+                append("The shell is Android sh with toybox utilities. Do not assume git, python, node, gcc or a package manager exist; check first with `which python3`. ")
+            }
             append(if (types.isEmpty()) "No project type was detected yet." else "Detected project type: ${types.joinToString(", ")}.")
         }
         val prompt = core + context
