@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "514891445648",
+    "project_id": "codepress-24751",
+    "storage_bucket": "codepress-24751.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:514891445648:android:5e60dd7ad6b6a12ff72f15",
+        "android_client_info": {
+          "package_name": "com.codepress.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "514891445648-vh31iu6f6aio8e0hegfnv2ca0mb1r63a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzI08mbQXZOhHaT5Ht3eZ-kVQ4VFe8Cwg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "514891445648-vh31iu6f6aio8e0hegfnv2ca0mb1r63a.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

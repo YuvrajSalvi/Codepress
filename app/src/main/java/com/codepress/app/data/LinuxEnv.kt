@@ -248,8 +248,10 @@ object SafeTarExtractor {
     private fun safeTarget(root: File, name: String): File {
         if (name.startsWith('/') || name.startsWith('\\') || name.contains('\\') || name.contains('\u0000'))
             throw IOException("Unsafe absolute tar path: $name")
-        val normalized = File(root, name).toPath().normalize()
+        // Resolve from the canonical extraction root. Tarballs commonly start with
+        // entries such as "./" and "./etc/"; these are the root itself, not traversal.
         val base = root.canonicalFile.toPath()
+        val normalized = base.resolve(name).normalize()
         if (!normalized.startsWith(base)) throw IOException("Tar path escapes the install directory: $name")
         return normalized.toFile()
     }

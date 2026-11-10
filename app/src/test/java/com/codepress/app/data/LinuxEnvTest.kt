@@ -39,6 +39,21 @@ class LinuxEnvTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun tarExtractionAcceptsDotRootEntries() {
+        val dir = Files.createTempDirectory("alpine-tar-test").toFile()
+        try {
+            val archive = File(dir, "dot-root.tar.gz")
+            writeTar(archive) {
+                val rootEntry = TarArchiveEntry("./", TarConstants.LF_DIR)
+                putArchiveEntry(rootEntry); closeArchiveEntry()
+                addFile("./etc/alpine-release", "3.22.0")
+            }
+            val root = File(dir, "rootfs")
+            SafeTarExtractor.extractGzip(archive, root)
+            assertEquals("3.22.0", File(root, "etc/alpine-release").readText())
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun tarExtractionRejectsEscapingSymlink() {
         val dir = Files.createTempDirectory("alpine-tar-test").toFile()
         try {
