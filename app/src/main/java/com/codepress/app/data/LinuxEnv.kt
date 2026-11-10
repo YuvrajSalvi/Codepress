@@ -70,7 +70,19 @@ class LinuxEnv(private val context: Context) {
             val staging = File(rootfs.parentFile, "alpine-staging").apply { deleteRecursively(); mkdirs() }
             try {
                 val installContext = currentCoroutineContext()
-                SafeTarExtractor.extractGzip(archive, staging) { installContext.ensureActive() }
+                SafeTarExtractor.extractGzip(
+                    archive,
+                    staging,
+                    checkActive = { installContext.ensureActive() },
+                    onProgress = { entries, extractedBytes ->
+                        // Keep the UI informed while the root filesystem is unpacked.
+                        _progress.value = Progress(
+                            84,
+                            "Extracting Alpine Linux… $entries entries, ${extractedBytes / (1024 * 1024)} MB extracted"
+                        )
+                    },
+                )
+                _progress.value = Progress(98, "Finalizing Alpine Linux…")
                 configureRootfs(staging)
                 currentCoroutineContext().ensureActive()
                 rootfs.parentFile?.mkdirs()
@@ -207,13 +219,22 @@ object ProotCommandBuilder {
 
 /** Tar extraction with path validation; symlinks are created only after regular files are written. */
 object SafeTarExtractor {
-    fun extractGzip(archive: File, destination: File, checkActive: () -> Unit = {}) {
+    fun extractGzip(
+        archive: File,
+        destination: File,
+        checkActive: () -> Unit = {},
+        onProgress: (entries: Long, extractedBytes: Long) -> Unit = { _, _ -> },
+    ) {
         destination.mkdirs()
         val links = mutableListOf<Pair<File, String>>()
+        var entryCount = 0L
+        var extractedBytes = 0L
         TarArchiveInputStream(BufferedInputStream(GZIPInputStream(archive.inputStream()))).use { tar ->
             while (true) {
                 checkActive()
                 val entry = tar.nextTarEntry ?: break
+                entryCount++
+                if (entryCount == 1L || entryCount % 25L == 0L) onProgress(entryCount, extractedBytes)
                 val output = safeTarget(destination, entry.name)
                 if (entry.isSymbolicLink) {
                     validateLink(output, entry.linkName, destination)
@@ -231,11 +252,13 @@ object SafeTarExtractor {
                             val count = tar.read(buffer)
                             if (count < 0) break
                             out.write(buffer, 0, count)
+                            extractedBytes += count
                         }
                     }
                     if (entry.mode and 0b001001001 != 0) output.setExecutable(true, false)
                 }
             }
+            onProgress(entryCount, extractedBytes)
         }
         links.forEach { (link, target) ->
             checkActive()
@@ -243,6 +266,7 @@ object SafeTarExtractor {
             ensureCanonicalParentInside(link.parentFile, destination)
             FilesCompat.createSymlink(link, target)
         }
+        onProgress(entryCount, extractedBytes)
     }
 
     private fun safeTarget(root: File, name: String): File {
