@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl unzip binutils
-          ./scripts/prepare-proot.sh
+          bash ./scripts/prepare-proot.sh
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -36,7 +36,9 @@ jobs:
 
       - name: Build debug APK
         shell: bash
-        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
 
       - name: Rename debug APK
         run: |
@@ -48,9 +50,13 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          MSG=$(grep -E -A8 "What went wrong|^e: |error:" build.log | head -40 | sed ':a;N;$!ba;s/\n/%0A/g')
-          echo "::error title=Build error::$MSG"
-          grep -E -A8 "What went wrong|^e: |error:" build.log | head -60 || true
+          if [ -f build.log ]; then
+            MSG=$(grep -E -A8 "What went wrong|^e: |error:" build.log | head -40 | sed ':a;N;$!ba;s/\n/%0A/g' || true)
+            echo "::error title=Build error::$MSG"
+            grep -E -A8 "What went wrong|^e: |error:" build.log | head -60 || true
+          else
+            echo "Build log was not created; failure happened before Gradle build (for example, dependency preparation)."
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
