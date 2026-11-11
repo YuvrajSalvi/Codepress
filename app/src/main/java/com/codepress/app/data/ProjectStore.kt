@@ -1,68 +1,23 @@
 package com.codepress.app.data
 
 import android.content.Context
-import android.os.Build
-import android.os.Environment
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-data class Project(val id: String, val name: String, val createdAt: Long, val updatedAt: Long)
+data class Project(val id: String, val name: String, val createdAt: Long, val updatedAt: Long, val folder: String = id)
 
 /**
  * Every project lives in its own folder:
- *   files/projects/<id>/workspace   - the project's files
- *   files/projects/<id>/chat.json   - the project's chat history
+ *   files/projects/<project name>/workspace   - the project's files
+ *   files/projects/<project name>/chat.json   - the project's chat history
  * so chats and files of different projects never mix.
- *
- * With "All files access" the same layout lives in the visible root folder /storage/emulated/0/CodePress
- * (created automatically); without it the app falls back to its private storage.
  */
 class ProjectStore(private val context: Context) {
 
-    private val prefs = context.getSharedPreferences("codepress_storage", Context.MODE_PRIVATE)
-    private val internalRoot = File(context.filesDir, "projects")
-    @Volatile private var root: File = resolveRoot().apply { mkdirs() }
-    private val indexFile: File get() = File(root, "projects.json")
-
-    /** True when the user granted All files access, so the public CodePress folder can be used. */
-    fun hasSharedAccess(): Boolean = Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
-
-    val isUsingSharedRoot: Boolean get() = root.absolutePath != internalRoot.absolutePath
-
-    private fun sharedRoot() = File(Environment.getExternalStorageDirectory(), "CodePress")
-
-    private fun resolveRoot(): File {
-        if (hasSharedAccess()) {
-            val shared = sharedRoot()
-            if (shared.isDirectory || shared.mkdirs()) return shared
-        }
-        return internalRoot
-    }
-
-    /** Called after the permission screen: creates /CodePress and copies existing projects into it. */
-    @Synchronized
-    fun adoptSharedRoot(): Boolean {
-        if (isUsingSharedRoot || !hasSharedAccess()) return false
-        val shared = sharedRoot()
-        if (!shared.isDirectory && !shared.mkdirs()) return false
-        runCatching { if (internalRoot.isDirectory) internalRoot.copyRecursively(shared, overwrite = false) }
-        root = shared
-        return true
-    }
-
-    /** Recreates a project (id preserved) from a cloud backup if it does not exist locally yet. */
-    @Synchronized
-    fun restore(id: String, name: String, chatJson: String) {
-        if (read().none { it.id == id }) {
-            val now = System.currentTimeMillis()
-            write(read() + Project(id, clean(name), now, now))
-            workspaceDir(id)
-        }
-        val chat = File(dir(id), "chat.json")
-        if (!chat.exists()) chat.writeText(chatJson)
-    }
+    private val root = File(context.filesDir, "projects").apply { mkdirs() }
+    private val indexFile = File(root, "projects.json")
 
     @Synchronized
     fun list(): List<Project> = read().sortedByDescending { it.updatedAt }
@@ -70,8 +25,10 @@ class ProjectStore(private val context: Context) {
     @Synchronized
     fun create(name: String): Project {
         val now = System.currentTimeMillis()
-        val p = Project(UUID.randomUUID().toString().take(8), clean(name), now, now)
-        write(read() + p)
+        val existing = read()
+        val cleaned = clean(name)
+        val p = Project(UUID.randomUUID().toString().take(8), cleaned, now, now, uniqueFolder(cleaned, existing))
+        write(existing + p)
         workspaceDir(p.id)
         return p
     }
@@ -89,11 +46,42 @@ class ProjectStore(private val context: Context) {
 
     @Synchronized
     fun delete(id: String) {
+        val d = dir(id)
         write(read().filterNot { it.id == id })
-        dir(id).deleteRecursively()
+        d.deleteRecursively()
     }
 
-    fun dir(id: String) = File(root, id)
+    fun dir(id: String) = File(root, read().firstOrNull { it.id == id }?.folder ?: id)
+
+    private fun folderName(name: String): String =
+        name.replace(Regex("[\\\\/:*?\"<>|\\u0000]"), "_").trim().trim('.').ifBlank { "Untitled" }
+
+    private fun uniqueFolder(name: String, all: List<Project>): String {
+        val base = folderName(name)
+        val taken = all.map { it.folder.lowercase() }.toSet()
+        if (base.lowercase() !in taken && !File(root, base).exists()) return base
+        var n = 2
+        while ("$base ($n)".lowercase() in taken || File(root, "$base ($n)").exists()) n++
+        return "$base ($n)"
+    }
+
+    /** Give existing projects (folders named by random id) a folder named after the project. */
+    @Synchronized
+    fun migrateFolderNames() {
+        var list = read()
+        var changed = false
+        list.forEach { p ->
+            if (p.folder != p.id) return@forEach
+            val old = File(root, p.folder)
+            if (!old.isDirectory) return@forEach
+            val target = uniqueFolder(p.name, list.filter { it.id != p.id })
+            if (old.renameTo(File(root, target))) {
+                list = list.map { if (it.id == p.id) it.copy(folder = target) else it }
+                changed = true
+            }
+        }
+        if (changed) write(list)
+    }
 
     fun workspaceDir(id: String): File = File(dir(id), "workspace").also { it.mkdirs() }
 
@@ -137,7 +125,7 @@ class ProjectStore(private val context: Context) {
         val arr = JSONArray(indexFile.readText())
         List(arr.length()) { i ->
             val o = arr.getJSONObject(i)
-            Project(o.getString("id"), o.getString("name"), o.optLong("createdAt"), o.optLong("updatedAt"))
+            Project(o.getString("id"), o.getString("name"), o.optLong("createdAt"), o.optLong("updatedAt"), o.optString("folder", o.getString("id")))
         }
     } catch (e: Exception) {
         emptyList()
@@ -146,7 +134,7 @@ class ProjectStore(private val context: Context) {
     private fun write(list: List<Project>) {
         val arr = JSONArray()
         list.forEach {
-            arr.put(JSONObject().put("id", it.id).put("name", it.name).put("createdAt", it.createdAt).put("updatedAt", it.updatedAt))
+            arr.put(JSONObject().put("id", it.id).put("name", it.name).put("createdAt", it.createdAt).put("updatedAt", it.updatedAt).put("folder", it.folder))
         }
         val tmp = File(root, "projects.json.tmp")
         tmp.writeText(arr.toString())

@@ -94,6 +94,7 @@ private val FILE_TOOLS = setOf("write_file", "edit_file", "run_command", "build_
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings = SecureSettings(app)
+    val auth = com.codepress.app.data.AuthManager()
     val linuxEnv = LinuxEnv(app)
     val projects = ProjectStore(app)
     val notifier = Notifier(app)
@@ -221,6 +222,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         app.registerActivityLifecycleCallbacks(lifecycleCallbacks)
         projects.migrateLegacy()
+        projects.migrateFolderNames()
         refreshProjects()
     }
 
@@ -244,14 +246,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ------------------------------------------------------------ projects
-
-    /** Moves projects into /CodePress once All files access is granted (only while no project is open). */
-    fun adoptSharedStorage() {
-        if (project.value != null) return
-        viewModelScope.launch(Dispatchers.IO) { if (projects.adoptSharedRoot()) refreshProjects() }
-    }
-
-    val needsStorageAccess: Boolean get() = !projects.hasSharedAccess()
 
     fun refreshProjects() {
         _projectList.value = projects.list()
@@ -346,30 +340,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun persist() {
         val (id, itemsSnap, hist) = snapshotChat() ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val json = ChatPersistence.encode(itemsSnap, hist)
-                projects.saveChat(id, json)
-                com.codepress.app.data.CloudAuth.pushChat(id, projects.list().firstOrNull { it.id == id }?.name ?: "Project", json)
-            }
+            runCatching { projects.saveChat(id, ChatPersistence.encode(itemsSnap, hist)) }
         }
-    }
-
-    /** Pulls chats saved in the cloud for the signed-in Google account and recreates any missing projects. */
-    suspend fun restoreCloudChats() {
-        runCatching {
-            com.codepress.app.data.CloudAuth.pullChats().forEach { projects.restore(it.projectId, it.name, it.json) }
-        }
-        withContext(Dispatchers.IO) { refreshProjects() }
     }
 
     private suspend fun persistNow() {
         val (id, itemsSnap, hist) = snapshotChat() ?: return
         withContext(Dispatchers.IO) {
-            runCatching {
-                val json = ChatPersistence.encode(itemsSnap, hist)
-                projects.saveChat(id, json)
-                com.codepress.app.data.CloudAuth.pushChat(id, projects.list().firstOrNull { it.id == id }?.name ?: "Project", json)
-            }
+            runCatching { projects.saveChat(id, ChatPersistence.encode(itemsSnap, hist)) }
         }
     }
 

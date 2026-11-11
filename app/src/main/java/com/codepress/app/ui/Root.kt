@@ -29,9 +29,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,33 +70,6 @@ fun CodePressRoot(vm: ChatViewModel) {
         ) {
             askNotifications.launch(NOTIFICATION_PERMISSION)
         }
-    }
-
-    // First launch: ask for All files access so projects can live in the public /CodePress folder.
-    var askStorage by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        val prefs = ctx.getSharedPreferences("codepress_boot", android.content.Context.MODE_PRIVATE)
-        if (Build.VERSION.SDK_INT >= 30 && vm.needsStorageAccess && !prefs.getBoolean("storage_asked", false)) {
-            prefs.edit().putBoolean("storage_asked", true).apply()
-            askStorage = true
-        }
-    }
-    LifecycleResumeEffect(Unit) { vm.adoptSharedStorage(); onPauseOrDispose { } }
-    if (askStorage) {
-        AlertDialog(
-            onDismissRequest = { askStorage = false },
-            title = { Text("Create the CodePress folder?") },
-            text = { Text("Allow \"All files access\" so CodePress can keep every project as a folder in /CodePress on your phone. You can skip this; projects then stay in private app storage.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    askStorage = false
-                    val uri = android.net.Uri.parse("package:${ctx.packageName}")
-                    runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)) }
-                        .onFailure { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
-                }) { Text("Allow") }
-            },
-            dismissButton = { TextButton(onClick = { askStorage = false }) { Text("Not now") } },
-        )
     }
 
     val p = project

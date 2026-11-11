@@ -78,7 +78,7 @@ class ShellRunner(
             }
 
             val trimmed = command.trim()
-            val linuxMode = origin == ShellOrigin.AI && useLinuxForAi() && linuxEnv?.isInstalled == true && linuxEnv.nativeBinariesPresent
+            val linuxMode = (origin == ShellOrigin.USER || useLinuxForAi()) && linuxEnv?.isInstalled == true && linuxEnv.nativeBinariesPresent
             CommandGuard.check(command, dir, workspace.root, linuxMode)?.let {
                 return@withContext finish(id, ShellState.FAILED, it, 126, elapsed())
             }

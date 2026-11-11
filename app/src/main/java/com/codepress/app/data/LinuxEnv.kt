@@ -6,7 +6,6 @@ import com.codepress.app.llm.Http
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +19,6 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.GZIPInputStream
 
 /** Installs and launches a small Alpine Linux root filesystem under the app's private files directory. */
@@ -31,18 +29,23 @@ class LinuxEnv(private val context: Context) {
     private val _progress = MutableStateFlow(Progress(0, "Linux is not installed"))
     val progress: StateFlow<Progress> = _progress.asStateFlow()
 
-    private companion object { const val STALL_MS = 45_000L }
+    private fun present(rel: String): Boolean =
+        java.nio.file.Files.exists(File(rootfs, rel).toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
 
+    /** True only when the whole root filesystem was extracted (it is activated atomically after extraction). */
     val isInstalled: Boolean
-        get() = File(rootfs, "bin/sh").isFile && File(rootfs, "sbin/apk").exists()
+        get() = present("bin/sh") && present("sbin/apk") && File(rootfs, "bin/busybox").isFile &&
+            File(rootfs, "etc/alpine-release").isFile
+
+    /** A rootfs folder exists but is incomplete/corrupted: the UI offers Repair. */
+    val isPartial: Boolean
+        get() = rootfs.exists() && !isInstalled
 
     val nativeBinariesPresent: Boolean
         get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so").isFile &&
             File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so").isFile
 
     suspend fun install() = withContext(Dispatchers.IO) {
-        runCatching { logFile.delete() }
-        log("install started; abi=${Build.SUPPORTED_ABIS.joinToString()} sdk=${Build.VERSION.SDK_INT}")
         if (isInstalled) {
             _progress.value = Progress(100, "Alpine Linux is ready")
             return@withContext
@@ -73,76 +76,35 @@ class LinuxEnv(private val context: Context) {
             if (!actual.equals(expectedHash, ignoreCase = true)) throw IOException("Alpine download checksum did not match. Please retry.")
 
             _progress.value = Progress(84, "Extracting Alpine Linux…")
-            log("download ok: ${archive.length()} bytes, sha256 verified; extracting")
             val staging = File(rootfs.parentFile, "alpine-staging").apply { deleteRecursively(); mkdirs() }
             try {
-                extractWithWatchdog(archive, staging)
+                val installContext = currentCoroutineContext()
+                SafeTarExtractor.extractGzip(
+                    archive,
+                    staging,
+                    checkActive = { installContext.ensureActive() },
+                    onProgress = { entries, extractedBytes ->
+                        // Keep the UI informed while the root filesystem is unpacked.
+                        _progress.value = Progress(
+                            84,
+                            "Extracting Alpine Linux… $entries entries, ${extractedBytes / (1024 * 1024)} MB extracted"
+                        )
+                    },
+                )
                 _progress.value = Progress(98, "Finalizing Alpine Linux…")
-                log("extraction finished; configuring rootfs")
                 configureRootfs(staging)
                 currentCoroutineContext().ensureActive()
                 rootfs.parentFile?.mkdirs()
                 rootfs.deleteRecursively()
                 if (!staging.renameTo(rootfs)) throw IOException("Could not activate the Alpine root filesystem.")
             } catch (t: Throwable) {
-                log("FAILED: ${t::class.java.simpleName}: ${t.message}")
                 staging.deleteRecursively()
                 throw t
             }
-            log("install complete")
             _progress.value = Progress(100, "Alpine Linux installed")
         } finally {
             work.deleteRecursively()
         }
-    }
-
-    /** Plain-text install log, so a stuck/failed install can be diagnosed from the phone. */
-    val logFile: File get() = File(context.filesDir, "linux/install.log")
-
-    @Synchronized
-    private fun log(line: String) {
-        runCatching {
-            logFile.parentFile?.mkdirs()
-            logFile.appendText("${java.text.SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(java.util.Date())} $line\n")
-        }
-    }
-
-    fun readLog(): String = runCatching { logFile.readText().takeLast(4000) }.getOrDefault("")
-
-    /**
-     * Extracts on a dedicated daemon thread and polls it from the coroutine. If nothing moves for
-     * [STALL_MS] (e.g. the file system blocks), the install fails with the exact entry it stopped on
-     * instead of showing a progress card forever.
-     */
-    private suspend fun extractWithWatchdog(archive: File, staging: File) {
-        val result = AtomicReference<Result<Unit>?>(null)
-        val abortFlag = java.util.concurrent.atomic.AtomicBoolean(false)
-        val tick = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
-        val entryName = AtomicReference("(starting)")
-        val job = currentCoroutineContext()[kotlinx.coroutines.Job]
-        val thread = Thread({
-            result.set(runCatching {
-                SafeTarExtractor.extractGzip(
-                    archive, staging,
-                    checkActive = {
-                        if (abortFlag.get() || job?.isActive == false) throw CancellationException("Install cancelled")
-                        tick.set(System.currentTimeMillis())
-                    },
-                    onProgress = { entries, bytes -> _progress.value = Progress(84 + (entries * 13 / 600).toInt().coerceIn(0, 13), "Extracting Alpine Linux… $entries entries, ${"%.1f".format(Locale.ROOT, bytes / 1048576.0)} MB\n${entryName.get()}") },
-                    onEntry = { name -> entryName.set(name); log("entry: $name") },
-                )
-            })
-        }, "alpine-extract").apply { isDaemon = true; start() }
-        try {
-            while (result.get() == null) {
-                delay(300)
-                if (System.currentTimeMillis() - tick.get() > STALL_MS) {
-                    log("STALLED on entry: ${entryName.get()}")
-                    throw IOException("Extraction stalled on '${entryName.get()}' (no progress for ${STALL_MS / 1000}s). Storage may be blocking writes. Log: ${logFile.absolutePath}")
-                }
-            }
-        } finally { abortFlag.set(true) }
-        result.get()!!.getOrThrow()
     }
 
     fun cancelProgress() { _progress.value = Progress(0, "Installation cancelled") }
@@ -264,77 +226,59 @@ object ProotCommandBuilder {
         }
 }
 
-/**
- * Tar extraction with path validation.
- *
- * Alpine's rootfs contains ABSOLUTE symlinks such as `/bin/sh -> /bin/busybox`. They are correct inside the
- * rootfs (PRoot resolves them against `-r`), and harmless on the host as long as nothing is ever written
- * *through* a link, which [ensureNoSymlinkParents] guarantees. Relative links that climb out of the
- * extraction root are still rejected.
- */
+/** Tar extraction with path validation; symlinks are created only after regular files are written. */
 object SafeTarExtractor {
     fun extractGzip(
         archive: File,
         destination: File,
         checkActive: () -> Unit = {},
         onProgress: (entries: Long, extractedBytes: Long) -> Unit = { _, _ -> },
-        onEntry: (name: String) -> Unit = {},
     ) {
         destination.mkdirs()
-        val root = destination.canonicalFile
+        val links = mutableListOf<Pair<File, String>>()
         var entryCount = 0L
         var extractedBytes = 0L
-        var lastReport = 0L
-        fun report(force: Boolean = false) {
-            val now = System.currentTimeMillis()
-            if (force || now - lastReport >= 150) { lastReport = now; onProgress(entryCount, extractedBytes) }
-        }
-        TarArchiveInputStream(BufferedInputStream(GZIPInputStream(archive.inputStream(), 64 * 1024), 64 * 1024)).use { tar ->
+        TarArchiveInputStream(BufferedInputStream(GZIPInputStream(archive.inputStream()))).use { tar ->
             while (true) {
                 checkActive()
-                val entry = tar.nextEntry ?: break
+                val entry = tar.nextTarEntry ?: break
                 entryCount++
-                onEntry(entry.name)
-                val output = safeTarget(root, entry.name)
-                when {
-                    entry.isSymbolicLink -> {
-                        validateLink(output, entry.linkName, root)
-                        output.parentFile?.let { ensureNoSymlinkParents(it, root); it.mkdirs() }
-                        java.nio.file.Files.deleteIfExists(output.toPath())
-                        FilesCompat.createSymlink(output, entry.linkName)
-                    }
-                    entry.isLink -> { // hard link: copy the already-extracted target
-                        val source = safeTarget(root, entry.linkName)
-                        ensureNoSymlinkParents(output.parentFile, root)
-                        output.parentFile?.mkdirs()
-                        if (source.isFile) source.copyTo(output, overwrite = true)
-                    }
-                    entry.isDirectory -> {
-                        ensureNoSymlinkParents(output, root)
-                        output.mkdirs()
-                    }
-                    entry.isFile -> {
-                        ensureNoSymlinkParents(output.parentFile, root)
-                        output.parentFile?.mkdirs()
-                        FileOutputStream(output).use { out ->
-                            val buffer = ByteArray(32 * 1024)
-                            while (true) {
-                                checkActive()
-                                val count = tar.read(buffer)
-                                if (count < 0) break
-                                out.write(buffer, 0, count)
-                                extractedBytes += count
-                                report()
-                            }
-                        }
-                        if (entry.mode and 0b001001001 != 0) output.setExecutable(true, false)
-                    }
-                    else -> { /* device nodes, fifos: PRoot binds the real /dev, skip */ }
+                if (entryCount == 1L || entryCount % 25L == 0L) onProgress(entryCount, extractedBytes)
+                val output = safeTarget(destination, entry.name)
+                if (entry.isSymbolicLink) {
+                    // Alpine uses absolute targets such as /bin/busybox. Rewrite them as relative links
+                    // inside the rootfs so they work on the Android host and under PRoot.
+                    val linkTarget = relativizeLink(output, entry.linkName, destination)
+                    validateLink(output, linkTarget, destination)
+                    links += output to linkTarget
+                    continue
                 }
-                report()
+                if (entry.isDirectory) { output.mkdirs(); continue }
+                if (entry.isFile) {
+                    ensureNoSymlinkParents(output.parentFile, destination)
+                    output.parentFile?.mkdirs()
+                    FileOutputStream(output).use { out ->
+                        val buffer = ByteArray(32 * 1024)
+                        while (true) {
+                            checkActive()
+                            val count = tar.read(buffer)
+                            if (count < 0) break
+                            out.write(buffer, 0, count)
+                            extractedBytes += count
+                        }
+                    }
+                    if (entry.mode and 0b001001001 != 0) output.setExecutable(true, false)
+                }
             }
+            onProgress(entryCount, extractedBytes)
         }
-        report(force = true)
+        links.forEach { (link, target) ->
+            checkActive()
+            link.parentFile?.mkdirs()
+            ensureCanonicalParentInside(link.parentFile, destination)
+            FilesCompat.createSymlink(link, target)
+        }
+        onProgress(entryCount, extractedBytes)
     }
 
     private fun safeTarget(root: File, name: String): File {
@@ -348,12 +292,21 @@ object SafeTarExtractor {
         return normalized.toFile()
     }
 
-    private fun validateLink(link: File, target: String, root: File) {
+    private fun relativizeLink(link: File, target: String, root: File): String {
+        if (!target.startsWith('/')) return target
         if (target.contains('\\') || target.contains('\u0000')) throw IOException("Unsafe symlink target: $target")
-        // Absolute targets live inside the guest rootfs; only relative links can escape on the host.
-        if (target.startsWith('/')) return
+        val base = root.canonicalFile.toPath()
+        val dest = base.resolve(target.trimStart('/')).normalize()
+        if (!dest.startsWith(base)) throw IOException("Symlink escapes install directory: $target")
+        val rel = link.parentFile.canonicalFile.toPath().relativize(dest).toString()
+        return rel.ifEmpty { "." }
+    }
+
+    private fun validateLink(link: File, target: String, root: File) {
+        if (target.startsWith('/') || target.startsWith('\\') || target.contains('\\') || target.contains('\u0000'))
+            throw IOException("Unsafe absolute symlink target: $target")
         val resolved = link.parentFile.toPath().resolve(target).normalize()
-        if (!resolved.startsWith(root.toPath())) throw IOException("Symlink escapes install directory: $target")
+        if (!resolved.startsWith(root.canonicalFile.toPath())) throw IOException("Symlink escapes install directory: $target")
     }
 
     private fun ensureCanonicalParentInside(parent: File?, root: File) {

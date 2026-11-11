@@ -115,7 +115,6 @@ fun TerminalTab(vm: ChatViewModel) {
     val scope = rememberCoroutineScope()
     var installJob by remember { mutableStateOf<Job?>(null) }
     var installError by remember { mutableStateOf<String?>(null) }
-    var installing by remember { mutableStateOf(false) }
     var generation by remember { mutableIntStateOf(0) }
     val result = remember(root.path, generation) {
         if (generation == 0) TerminalHost.session(context, root, linuxEnv) else TerminalHost.restart(context, root, linuxEnv)
@@ -136,36 +135,40 @@ fun TerminalTab(vm: ChatViewModel) {
     fun arrow(c: Char) = send(if (view?.keypadApplicationMode == true) "${ESC}O$c" else "$ESC[$c")
 
     Column(Modifier.fillMaxSize()) {
-        if (!linuxEnv.isInstalled || !linuxEnv.nativeBinariesPresent) {
+        if (linuxEnv.isInstalled && linuxEnv.nativeBinariesPresent) {
+            Text(
+                "✓ Linux Installed (Alpine)",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
             Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
-                    Text(if (linuxEnv.isInstalled) "PRoot binaries required" else "Install full Linux", style = MaterialTheme.typography.titleMedium)
+                    Text(if (linuxEnv.isInstalled) "PRoot binaries required" else if (linuxEnv.isPartial) "Linux install incomplete" else "Install full Linux", style = MaterialTheme.typography.titleMedium)
                     Text(
                         if (linuxEnv.isInstalled) "Alpine is installed, but libproot.so or libproot-loader.so is missing. Add both ABI-matched files under app/src/main/jniLibs/ and rebuild. The terminal is using Android sh for now."
+                        else if (linuxEnv.isPartial) "The Alpine files are incomplete or damaged. Tap Repair to install them again."
                         else "About 4 MB download. Then install tools with: apk add git python3 nano nodejs gcc",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (linuxEnv.isInstalled) {
                         Text("The root filesystem is ready; installing it again will not add the missing native binaries.", style = MaterialTheme.typography.bodySmall)
-                    } else if (installing) {
+                    } else if (installJob?.isActive == true) {
                         LinearProgressIndicator(progress = { progress.percent / 100f }, modifier = Modifier.fillMaxWidth())
                         Text(progress.message, style = MaterialTheme.typography.bodySmall)
-                        OutlinedButton(onClick = { installJob?.cancel(); installJob = null; installing = false; linuxEnv.cancelProgress() }) { Text("Cancel") }
+                        OutlinedButton(onClick = { installJob?.cancel(); installJob = null; linuxEnv.cancelProgress() }) { Text("Cancel") }
                     } else if (!linuxEnv.isInstalled) {
                         installError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                         Button(onClick = {
                             installError = null
-                            installing = true
                             installJob = scope.launch {
                                 try { linuxEnv.install(); generation++ }
                                 catch (e: kotlinx.coroutines.CancellationException) { linuxEnv.cancelProgress(); throw e }
-                                catch (e: Throwable) {
-                                    installError = (e.message ?: "Linux installation failed.") + "\n\n" + linuxEnv.readLog().takeLast(600)
-                                }
-                                finally { installing = false }
+                                catch (e: Throwable) { installError = e.message ?: "Linux installation failed. Please retry." }
                             }
-                        }) { Text(if (installError == null) "Install" else "Retry") }
+                        }) { Text(if (installError != null) "Retry" else if (linuxEnv.isPartial) "Repair" else "Install") }
                     }
                 }
             }

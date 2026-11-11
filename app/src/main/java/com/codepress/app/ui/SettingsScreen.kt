@@ -156,6 +156,8 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            AccountSection(vm.auth)
+            HorizontalDivider()
             NavRow("API keys", "Locked with your fingerprint or phone password", openKeys)
             NavRow("Plugins", "GitHub", openPlugins)
             HorizontalDivider()
