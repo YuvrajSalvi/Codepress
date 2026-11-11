@@ -1,0 +1,30 @@
+Third-party notices for optional Linux runtime
+
+PRoot for Android
+- Project: PRoot for Android, built from the Termux PRoot source tree.
+- Upstream binary release: https://github.com/ahmed-alnassif/proot/releases/tag/v26.10.08-a179d3e
+- Corresponding source repository: https://github.com/ahmed-alnassif/proot (release tag v26.10.08-a179d3e).
+- License stated by the upstream build repository: GNU Affero General Public License version 3 (AGPL-3.0).
+- The CI script pins the release and verifies the published SHA-256 hashes before packaging. If redistributing an APK containing these binaries, retain the exact corresponding source, license text, notices, and any applicable AGPL source-offer obligations. Do not substitute binaries from a different release without updating the source reference and checksums.
+
+Talloc (when statically or dynamically included as part of the PRoot build)
+- Project: Samba talloc, https://talloc.samba.org/
+- License for the talloc library: GNU Lesser General Public License version 3 or later (LGPL-3.0-or-later); verify the exact source release used because packaging metadata can carry additional package-level license tags.
+- If dynamically linked, include the corresponding library and notices. If statically linked into PRoot, comply with the license obligations for the exact talloc release and build.
+
+BusyBox (included by the Alpine minirootfs)
+- Project: BusyBox, https://busybox.net/
+- License: GNU General Public License version 2 (GPL-2.0)
+- Copyright: BusyBox contributors.
+- The Alpine minirootfs contains BusyBox. Alpine package notices and the corresponding BusyBox source/license for the exact installed version should be retained when redistributing the root filesystem or APK.
+
+Alpine Linux
+- Project: Alpine Linux, https://alpinelinux.org/
+- The minirootfs is downloaded at runtime from https://dl-cdn.alpinelinux.org/ over HTTPS. It is not embedded in this repository archive. Alpine contains multiple separately licensed packages; consult each package's metadata and license before redistribution.
+
+PRoot binaries are fetched during GitHub Actions builds by scripts/prepare-proot.sh; they are not committed to this source archive. BusyBox is part of the Alpine minirootfs downloaded at runtime. The notices above describe the runtime components used by the application.
+
+Apache Commons Compress
+- Version: 1.27.1 (dependency added for safe tar archive reading)
+- Project: https://commons.apache.org/proper/commons-compress/
+- License: Apache License 2.0.
