@@ -193,4 +193,7 @@ object LanPreview {
 
     @Synchronized
     fun isRunning(): Boolean = server?.isRunning == true
+
+    @Synchronized
+    fun port(): Int = server?.port ?: -1
 }

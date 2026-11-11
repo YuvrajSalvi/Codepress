@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Box
+import com.codepress.app.R
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -112,7 +114,7 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
                     ProviderType.GEMINI -> ModelLists.gemini(geminiKey)
                     else -> ModelLists.openAi(openAiBase, openAiKey)
                 }
-                if (fetched.isEmpty()) fetchError = "The provider returned no models."
+                if (fetched.isEmpty()) fetchError = "The provider returned no models." else s.setCachedModels(provider, fetched)
                 if (provider == ProviderType.GEMINI && fetched.isNotEmpty() && geminiModel !in fetched) {
                     geminiModel = ModelLists.pickDefault(fetched)
                     s.setModel(ProviderType.GEMINI, geminiModel)
@@ -174,11 +176,13 @@ private fun MainSettings(vm: ChatViewModel, onBack: () -> Unit, openKeys: () -> 
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(selected = provider == p, onClick = null)
+                    Box(Modifier.padding(start = 6.dp)) { ProviderIcon(providerIconRes(p, s.openAiBaseUrl), 24.dp) }
                     Text(p.label, Modifier.padding(start = 10.dp))
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(selected = false, onClick = null, enabled = false)
+                Box(Modifier.padding(start = 6.dp)) { ProviderIcon(R.drawable.ic_tilak, 24.dp) }
                 Column(Modifier.padding(start = 10.dp)) {
                     Text("Tilak — our own AI model", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("Coming Soon", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

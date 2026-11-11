@@ -129,6 +129,25 @@ class LinuxEnv(private val context: Context) {
         return ProotCommandBuilder.build(proot.absolutePath, rootfs.absolutePath, workspace.canonicalPath, prootCwd, shellCmd)
     }
 
+    /** Supplies the GitHub user and token saved in Settings. The token only lives in the process environment, never on disk. */
+    @Volatile var gitCredentials: () -> Pair<String, String>? = { null }
+
+    private fun prepareGit(user: String) {
+        if (!isInstalled) return
+        val askpass = File(rootfs, "usr/local/bin/cp-askpass")
+        val script = "#!/bin/sh\ncase \"\$1\" in\n  *github.com*) ;;\n  *) exit 1 ;;\nesac\ncase \"\$1\" in\n  *sername*) printf '%s\\n' \"\$CP_GIT_USER\" ;;\n  *) printf '%s\\n' \"\$CP_GIT_TOKEN\" ;;\nesac\n"
+        if (!askpass.isFile || askpass.readText() != script) {
+            askpass.parentFile?.mkdirs()
+            askpass.writeText(script)
+        }
+        askpass.setExecutable(true, false)
+        val cfg = File(rootfs, "root/.gitconfig")
+        if (!cfg.exists()) {
+            cfg.parentFile?.mkdirs()
+            cfg.writeText("[user]\n\tname = $user\n\temail = $user@users.noreply.github.com\n[safe]\n\tdirectory = *\n[init]\n\tdefaultBranch = main\n")
+        }
+    }
+
     fun processEnvironment(noSeccomp: Boolean = false): Map<String, String> = buildMap {
         val native = context.applicationInfo.nativeLibraryDir
         put("PROOT_LOADER", File(native, "libproot-loader.so").absolutePath)
@@ -138,6 +157,14 @@ class LinuxEnv(private val context: Context) {
         put("PROOT_TMP_DIR", tmp)
         put("PROOT_TMPDIR", tmp)
         if (noSeccomp) put("PROOT_NO_SECCOMP", "1")
+        gitCredentials()?.let { (user, token) ->
+            if (user.isNotBlank() && token.isNotBlank() && runCatching { prepareGit(user) }.isSuccess && isInstalled) {
+                put("GIT_ASKPASS", "/usr/local/bin/cp-askpass")
+                put("GIT_TERMINAL_PROMPT", "0")
+                put("CP_GIT_USER", user)
+                put("CP_GIT_TOKEN", token)
+            }
+        }
     }
 
     private suspend fun downloadText(url: String): String = withContext(Dispatchers.IO) {

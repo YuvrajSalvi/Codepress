@@ -95,7 +95,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings = SecureSettings(app)
     val auth = com.codepress.app.data.AuthManager()
-    val linuxEnv = LinuxEnv(app)
+    val linuxEnv = LinuxEnv(app).also { env -> env.gitCredentials = { settings.githubUser to settings.githubToken } }
     val projects = ProjectStore(app)
     val notifier = Notifier(app)
     val models = LocalModels(app)
@@ -381,7 +381,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     buildProvider(),
                     tools,
                     settings.autoApprove,
-                    systemPrompt = { SystemPrompt.build(workspace, local, settings.useLinuxForAiCommands && linuxEnv.isInstalled && linuxEnv.nativeBinariesPresent) },
+                    systemPrompt = { SystemPrompt.build(workspace, local, settings.useLinuxForAiCommands && linuxEnv.isInstalled && linuxEnv.nativeBinariesPresent, if (settings.githubToken.isNotBlank()) settings.githubUser else "") },
                     isAutoApproved = { true },
                 ).run(history, listener)
             } catch (e: CancellationException) {
@@ -761,7 +761,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun importFilesInto(uris: List<Uri>, dir: String) {
         val ws = workspace
         val tr = transfer
-        fileTask("Importing…") { "Imported ${tr.importFiles(uris, ws.resolve(dir.ifEmpty { "." }))} file(s)." }
+        fileTask("Importing…") { "Imported ${tr.importFiles(uris, ws.resolve(dir.ifEmpty { "." }).also { it.mkdirs() })} file(s) into ${dir.ifEmpty { "the project" }}." }
     }
 
     fun exportPaths(paths: List<String>, uri: Uri) {

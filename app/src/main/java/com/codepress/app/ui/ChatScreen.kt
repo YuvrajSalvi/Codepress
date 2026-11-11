@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.OutlinedTextFieldDefaults
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DeleteSweep
@@ -185,10 +186,14 @@ fun ChatScreen(vm: ChatViewModel, project: Project, onSettings: () -> Unit, onOp
                 onManage = onSettings,
                 modifier = Modifier.padding(start = 12.dp, top = 6.dp),
             )
+            val pickFiles = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+            ) { uris -> if (uris.isNotEmpty()) vm.importFilesInto(uris, "uploads") }
             Row(
-                Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
+                Modifier.fillMaxWidth().padding(start = 4.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                IconAction(androidx.compose.material.icons.Icons.Rounded.Add, "Attach files", { pickFiles.launch(arrayOf("*/*")) }, enabled = !running)
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },

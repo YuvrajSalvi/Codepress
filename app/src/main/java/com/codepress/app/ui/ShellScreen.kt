@@ -58,14 +58,14 @@ import com.codepress.app.agent.ShellState
 
 private val QUICK_COMMANDS = listOf(
     "ls -la", "pwd", "cat ", "mkdir ", "git status", "git add .", "git commit -m \"\"", "git push", "git clone ",
-    "pkg install ", "pip install ", "nano ", "python ", "node ",
+    "apk update", "apk add ", "apk del ", "apk search ", "python3 ", "node ", "nano ",
 )
 
 private val HELP = listOf(
     "Files and folders" to "ls  cd  pwd  cat  mkdir  cp  mv  rm",
-    "Git (Phase 2)" to "git status\ngit add .\ngit commit -m \"message\"\ngit push\ngit clone <link>",
-    "Install tools (Phase 2)" to "pkg install <name>\npip install <name>",
-    "Edit a file (Phase 2)" to "nano <file>",
+    "Git" to "git status\ngit add .\ngit commit -m \"message\"\ngit push\ngit clone <link>",
+    "Install tools (Alpine apk)" to "apk update\napk add <name>\napk del <name>\napk search <name>",
+    "Edit a file" to "apk add nano   then   nano <file>",
     "Tip" to "Tap a chip above the box to fill in a command, then edit it and tap Run. Commands from the AI show up here marked “AI →”.",
 )
 

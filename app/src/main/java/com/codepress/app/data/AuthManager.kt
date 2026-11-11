@@ -3,12 +3,14 @@ package com.codepress.app.data
 import android.content.Context
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
+import androidx.credentials.CredentialOption
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.google.firebase.FirebaseNetworkException
@@ -46,26 +48,21 @@ class AuthManager(private val auth: FirebaseAuth = FirebaseAuth.getInstance()) {
         _error.value = null
         _state.value = State.Busy
         try {
-            val option = GetGoogleIdOption.Builder()
-                .setServerClientId(webClientId)
-                .setFilterByAuthorizedAccounts(false)
-                .build()
-            val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
-            val result = CredentialManager.create(activityContext).getCredential(activityContext, request)
-            val credential = result.credential
-            if (credential !is CustomCredential || credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                throw IllegalStateException("Unexpected credential type returned.")
+            val idToken = try {
+                requestToken(activityContext, GetGoogleIdOption.Builder().setServerClientId(webClientId).setFilterByAuthorizedAccounts(false).build())
+            } catch (e: NoCredentialException) {
+                // Second try with the classic "Sign in with Google" sheet.
+                requestToken(activityContext, GetSignInWithGoogleOption.Builder(webClientId).build())
             }
-            val idToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
             auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: GetCredentialCancellationException) {
             _error.value = "Sign-in was cancelled."
         } catch (e: NoCredentialException) {
-            _error.value = "No Google account is available on this phone. Add one in Android Settings and try again."
+            _error.value = "Google sign-in is not ready for this app build yet. The developer must add this build's SHA-1 in Firebase (see FIREBASE_SETUP.md). Your Google account on the phone is fine."
         } catch (e: GetCredentialException) {
-            _error.value = "Google sign-in failed: ${e.message ?: e.type}. If this persists, check the SHA-1 fingerprint and Google provider in Firebase."
+            _error.value = "Google sign-in failed. Check the SHA-1 and the Google provider in Firebase, then try again."
         } catch (e: GoogleIdTokenParsingException) {
             _error.value = "Google returned an invalid sign-in token."
         } catch (e: FirebaseNetworkException) {
@@ -77,6 +74,15 @@ class AuthManager(private val auth: FirebaseAuth = FirebaseAuth.getInstance()) {
         } finally {
             _state.value = auth.currentUser.toState()
         }
+    }
+
+    private suspend fun requestToken(ctx: Context, option: CredentialOption): String {
+        val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+        val credential = CredentialManager.create(ctx).getCredential(ctx, request).credential
+        if (credential !is CustomCredential || credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+            throw IllegalStateException("Unexpected credential type returned.")
+        }
+        return GoogleIdTokenCredential.createFrom(credential.data).idToken
     }
 
     suspend fun signOut(context: Context) {

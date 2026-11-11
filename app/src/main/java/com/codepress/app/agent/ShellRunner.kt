@@ -36,6 +36,8 @@ data class ShellEntry(
  * User commands run in the current directory (changed with `cd`, kept inside the workspace);
  * AI commands always start in the workspace root.
  */
+private val apkLock = kotlinx.coroutines.sync.Mutex()
+
 class ShellRunner(
     private val workspace: Workspace,
     private val linuxEnv: LinuxEnv? = null,
@@ -125,6 +127,9 @@ class ShellRunner(
                     put("PATH", listOf(workspace.root.path + "/bin", get("PATH")?.takeIf { it.isNotBlank() } ?: base).joinToString(":"))
                 }
             }
+            // Two apk processes at once give "Unable to lock database", so apk commands run one at a time.
+            val needsLock = linuxMode && Regex("(^|[\\s;&|(])apk(\\s|$)").containsMatchIn(command)
+            if (needsLock) apkLock.lock()
             val process = try {
                 pb.start()
             } catch (e: Exception) {
@@ -133,6 +138,7 @@ class ShellRunner(
                         pb.environment().putAll(linuxEnv!!.processEnvironment(noSeccomp = true))
                         pb.start()
                     } catch (retry: Exception) {
+                        if (needsLock) apkLock.unlock()
                         return@withContext finish(id, ShellState.FAILED, "Could not start Alpine Linux. Check that the packaged proot binaries match this device ABI. ${retry.message ?: e.message}", 127, elapsed())
                     }
                 } else {
@@ -180,8 +186,12 @@ class ShellRunner(
                 cancelled = true
                 throw e
             } finally {
-                if (process.isAlive) process.destroyForcibly()
+                if (process.isAlive) {
+                    process.destroyForcibly()
+                    if (linuxMode) killStaleApk()
+                }
                 processes.remove(id)
+                if (needsLock) apkLock.unlock()
                 if (cancelled) {
                     reader.join(500)
                     finish(id, ShellState.STOPPED, (snapshot(out) + "\n[stopped]").trim(), null, elapsed())
@@ -275,6 +285,21 @@ class ShellRunner(
     }
 
     /** Stops a running command (user or AI). */
+    /** A killed shell can leave an apk process behind that keeps the package database locked. */
+    private fun killStaleApk() {
+        val env = linuxEnv ?: return
+        Thread {
+            try {
+                val p = ProcessBuilder(env.command("killall -9 apk 2>/dev/null; true", workspace.root, workspace.root))
+                    .redirectErrorStream(true).apply { environment().putAll(env.processEnvironment()) }.start()
+                p.outputStream.close()
+                p.inputStream.readBytes()
+                p.waitFor()
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
     fun stop(id: Long) {
         stopped.add(id)
         processes[id]?.destroyForcibly()

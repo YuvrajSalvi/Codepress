@@ -29,7 +29,7 @@ How to work:
 """.trim()
 
     /** Base prompt plus the project's own rules from .codepress/instructions.md, when that file exists. */
-    fun build(workspace: Workspace, local: Boolean = false, linuxAvailable: Boolean = false): String {
+    fun build(workspace: Workspace, local: Boolean = false, linuxAvailable: Boolean = false, githubUser: String = ""): String {
         val core = if (local) base + "\n\n" + localGuide else base
         val types = try { FileOps(workspace).detectProject() } catch (e: Exception) { emptyList() }
         val context = buildString {
@@ -40,6 +40,12 @@ How to work:
                 append("Your run_command shell is Alpine Linux under proot. The project workspace is mounted at /work; keep project-file operations inside /work. Alpine system paths such as /usr, /etc and /bin are part of the container and are allowed; never access Android host paths outside the mounted workspace. Set the optional run_command workdir argument to a workspace-relative directory when needed. ")
                 append("Alpine includes apk. If a tool is missing, install it yourself on first use with `apk add --no-cache <packages>` (for example `apk add --no-cache git python3 nano nodejs gcc`). ")
                 append("After installation, git, python3, nano, node, gcc and other Alpine packages are available in later commands. Do not claim they are missing without checking. ")
+                append("This is ALPINE Linux (musl libc, BusyBox, OpenRC-less container), not Debian, Ubuntu or Termux: use ONLY `apk` for packages (`apk update`, `apk add --no-cache <pkg>`, `apk del <pkg>`, `apk search <name>`); never use apt, apt-get, yum, dnf, pacman or pkg, and never use sudo (you are already root in the container). Package names are Alpine names (for example py3-pip, openjdk17, build-base, nodejs, npm). ")
+                append("Run only ONE apk command at a time, never in the background and never in parallel. If you see `Unable to lock database`, wait with `sleep 5` and run the same command again once; do not start a second apk. ")
+                append("You are allowed to run commands directly in this Alpine shell. Never say you cannot install packages or that you are in a restricted sandbox; run the command and report the real output. ")
+                if (githubUser.isNotBlank()) {
+                    append("The user connected the GitHub account `$githubUser` in Settings. Git over HTTPS to github.com is already authenticated automatically: run git clone, pull, commit and push directly, and never ask the user for a username, password or token. Do not put a token in a remote URL. ")
+                }
             } else {
                 append("The shell is Android sh with toybox utilities. Do not assume git, python, node, gcc or a package manager exist; check first with `which python3`. ")
             }

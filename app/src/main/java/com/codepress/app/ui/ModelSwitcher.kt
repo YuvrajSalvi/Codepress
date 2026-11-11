@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.codepress.app.data.ConfiguredModel
+import com.codepress.app.data.ProviderType
 
 /**
  * Chip above the message box. Lists only the models the user has already set up (key + model name),
@@ -39,9 +41,16 @@ fun ModelSwitcher(vm: ChatViewModel, enabled: Boolean, onManage: () -> Unit, mod
     val rev by vm.revision.collectAsStateWithLifecycle()
     val entries = remember(rev) { vm.settings.configuredModels() }
     val active = remember(rev) { vm.settings.provider }
+    val openAiBase = remember(rev) { vm.settings.openAiBaseUrl }
     var open by remember { mutableStateOf(false) }
     val current = entries.firstOrNull { it.provider == active }
-    val switchable = entries.size > 1
+    // Every model the user can pick without opening Settings: the saved model plus the provider's loaded model list.
+    val options = remember(rev) {
+        entries.flatMap { e ->
+            (listOf(e.model) + vm.settings.cachedModels(e.provider)).distinct().map { ConfiguredModel(e.provider, e.label, it) }
+        }
+    }
+    val switchable = options.size > 1
     val shape = RoundedCornerShape(20.dp)
 
     Box(modifier) {
@@ -53,7 +62,8 @@ fun ModelSwitcher(vm: ChatViewModel, enabled: Boolean, onManage: () -> Unit, mod
                 if (entries.isEmpty()) onManage() else if (switchable && enabled) open = true
             },
         ) {
-            Row(Modifier.padding(start = 12.dp, end = if (switchable) 6.dp else 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(start = 8.dp, end = if (switchable) 6.dp else 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                current?.let { ProviderIcon(providerIconRes(it.provider, openAiBase), 18.dp); androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 6.dp)) }
                 Text(
                     current?.title ?: "Add a model",
                     fontSize = 12.sp,
@@ -66,11 +76,14 @@ fun ModelSwitcher(vm: ChatViewModel, enabled: Boolean, onManage: () -> Unit, mod
             }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            entries.forEach { e ->
+            options.forEach { e ->
+                val selected = e.provider == active && e.model == vm.settings.model(e.provider)
                 DropdownMenuItem(
-                    text = { Text(e.title + if (e.provider == active) "  ✓" else "") },
+                    leadingIcon = { ProviderIcon(providerIconRes(e.provider, openAiBase), 20.dp) },
+                    text = { Text(if (e.provider == ProviderType.LOCAL) e.model else "${e.label} · ${e.model}" + if (selected) "  ✓" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     onClick = {
                         open = false
+                        if (e.provider != ProviderType.LOCAL) vm.settings.setModel(e.provider, e.model)
                         vm.switchModel(e.provider)
                     },
                 )

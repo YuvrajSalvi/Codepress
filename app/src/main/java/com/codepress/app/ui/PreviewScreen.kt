@@ -23,6 +23,7 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -71,12 +72,17 @@ fun PreviewScreen(vm: ChatViewModel, target: PreviewTarget, onClose: () -> Unit)
             val folder = if (target.path != null) vm.workspace.root else (target.file.parentFile ?: target.file)
             val rel = if (target.path != null) target.path else target.file.name
             val base = withContext(Dispatchers.IO) { LanPreview.start(folder) }
+            val path = "/" + rel.trimStart('/').split('/').joinToString("/") { Uri.encode(it) }
             if (base == null) {
+                // No Wi-Fi: the site still runs on this phone, so open it in the phone's browser.
+                val local = "http://127.0.0.1:${LanPreview.port()}$path"
                 lanUrl = null
-                lanError = "No Wi-Fi / hotspot address found. Connect the phone to a Wi-Fi network (or turn on its hotspot) and try again."
+                lanError = "No Wi-Fi / hotspot found, so other devices cannot open it. It is running on this phone only."
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(local)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             } else {
                 lanError = null
-                lanUrl = base + "/" + rel.trimStart('/').split('/').joinToString("/") { Uri.encode(it) }
+                lanUrl = base + path
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(lanUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             lanDialog = true
         }
@@ -124,6 +130,22 @@ fun PreviewScreen(vm: ChatViewModel, target: PreviewTarget, onClose: () -> Unit)
         },
     ) { inner ->
         Column(Modifier.padding(inner).fillMaxSize()) {
+            androidx.compose.foundation.layout.Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = {
+                        pcMode = !pcMode
+                        web?.let { applyViewMode(it, pcMode); it.reload() }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (pcMode) "Phone mode" else "Run in PC mode", maxLines = 1) }
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = { startLan() },
+                    modifier = Modifier.weight(1f),
+                ) { Text("View in browser", maxLines = 1) }
+            }
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->

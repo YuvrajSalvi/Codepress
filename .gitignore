@@ -13,3 +13,4 @@
 *.aab
 *.jks
 *.keystore
+!app/codepress-debug.jks

@@ -25,6 +25,17 @@ android {
         buildConfig = true
     }
 
+    // A fixed debug key, so the SHA-1 registered in Firebase stays the same for every build (CI runners
+    // otherwise generate a new random debug key each time, which breaks Google Sign-In).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("codepress-debug.jks")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false

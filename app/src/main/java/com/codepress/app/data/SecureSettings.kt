@@ -42,6 +42,12 @@ class SecureSettings(context: Context) {
     fun model(p: ProviderType): String = prefs.getString("model_${p.name}", defaultModel(p)) ?: defaultModel(p)
     fun setModel(p: ProviderType, v: String) = prefs.edit().putString("model_${p.name}", v.trim()).apply()
 
+    /** Model names last loaded from the provider; the chat model switcher lists them. */
+    fun cachedModels(p: ProviderType): List<String> =
+        (prefs.getString("models_${p.name}", "") ?: "").split('\n').filter { it.isNotBlank() }
+    fun setCachedModels(p: ProviderType, list: List<String>) =
+        prefs.edit().putString("models_${p.name}", list.take(60).joinToString("\n")).apply()
+
     var openAiBaseUrl: String
         get() = prefs.getString("openai_base", OPENAI_PRESETS.first().baseUrl) ?: OPENAI_PRESETS.first().baseUrl
         set(v) = prefs.edit().putString("openai_base", v.trim()).apply()
@@ -52,8 +58,8 @@ class SecureSettings(context: Context) {
         set(v) = prefs.edit().putString("local_model", v).apply()
 
     var useLinuxForAiCommands: Boolean
-        get() = prefs.getBoolean("use_linux_ai_commands", false)
-        set(v) = prefs.edit().putBoolean("use_linux_ai_commands", v).apply()
+        get() = prefs.getBoolean("use_linux_ai_commands_v2", true)
+        set(v) = prefs.edit().putBoolean("use_linux_ai_commands_v2", v).apply()
 
     var autoApprove: Boolean
         get() = prefs.getBoolean("auto_approve", false)
